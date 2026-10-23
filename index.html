@@ -29,16 +29,16 @@
   <div class="gpsbar" id="gpsBar"><span class="dot"></span><span id="gpsText">GPS en espera</span></div>
   <form id="formCaptura" autocomplete="off">
     <div class="row2">
-      <label>Proyecto<input name="project" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="PROY01"></label>
-      <label>Campaña<input name="campaign" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="CAMP01"></label>
+      <label>Proyecto<input name="project" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. PROY01"></label>
+      <label>Campaña<input name="campaign" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. CAMP01"></label>
     </div>
     <label>Estación / punto
-      <input name="station" required list="dlStation" placeholder="E-01">
+      <input name="station" required list="dlStation" placeholder="ej. E-01">
       <datalist id="dlStation"></datalist>
     </label>
     <button type="button" id="nearChip" class="chip" hidden></button>
     <div class="row2">
-      <label>Componente<input name="component" required list="dlComponent" placeholder="Flora"><datalist id="dlComponent"></datalist></label>
+      <label>Componente<input name="component" required list="dlComponent" placeholder="ej. Flora"><datalist id="dlComponent"></datalist></label>
       <label>Importancia
         <select name="importance"><option>Baja</option><option selected>Media</option><option>Alta</option></select>
       </label>
@@ -145,7 +145,12 @@
   </form>
 
   <div class="card">
-    <h3>Proyecto actual: <span id="projName">—</span></h3>
+    <h3>Proyecto y campaña</h3>
+    <div class="row2">
+      <label>Proyecto<input id="setProject" pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. PROY01" autocomplete="off"></label>
+      <label>Campaña<input id="setCampaign" pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. CAMP01" autocomplete="off"></label>
+    </div>
+    <p class="hint">Solo letras, números, guion o guion bajo (sin espacios). Es el mismo dato de la pestaña Captura. Proyecto actual: <b id="projName">—</b></p>
     <label class="filebtn">Logo del proyecto (PNG/JPG)<input type="file" id="logoIn" accept="image/png,image/jpeg" hidden></label>
     <img id="logoPrev" class="logoPrev" alt="" hidden>
     <label>Componentes (uno por línea)<textarea id="catComp" rows="4"></textarea></label>

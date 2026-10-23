@@ -1,5 +1,5 @@
 /* Alba Field · service worker: la app abre y funciona sin señal. */
-const VERSION = 'geofield-1.0.0';
+const VERSION = 'geofield-1.0.1';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/onedrive.js', 'js/app.js',
@@ -11,7 +11,7 @@ const TILE_CACHE = 'gf-osm-tiles', OFFLINE_TILES = 'gf-offline-tiles', MAX_TILES
 const EMPTY_PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='), c => c.charCodeAt(0));
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('geofield-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
