@@ -1,5 +1,5 @@
 /* Alba Field · aplicación de campo offline (PWA). */
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const CODE_RE = /^[A-Za-z0-9_\-]{1,32}$/;
@@ -53,7 +53,15 @@ async function shareOrDownload(blob, name, title) {
 /* ---------------- arranque ---------------- */
 async function init() {
   $('#verLine').textContent = `Alba Field ${APP_VERSION} · datos guardados solo en este dispositivo hasta que usted los entregue.`;
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
+  if ('serviceWorker' in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
+    // versión nueva instalada: recargar una vez (si no se está usando la cámara)
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController || init._reloaded) return; init._reloaded = true;
+      if (!S.stream && !S.busy) location.reload(); else toast('Nueva versión lista: cierre y abra la app');
+    });
+  }
   await DB.open();
   S.set = { ...S.set, ...(await DB.kv('settings', {})) };
   S.form = (await DB.kv('form', {})) || {};
@@ -76,7 +84,9 @@ async function reload() {
   const pend = S.recs.filter(r => !r.voided && isPending(r)).length;
   $('#pendBadge').hidden = !pend; $('#pendBadge').textContent = `${pend} por entregar`;
   $('#ctxLine').textContent = `${S.set.specialist || 'sin código'} · ${p || '—'}/${S.form.campaign || '—'}`;
-  $('#projName').textContent = p || '— (escriba un proyecto en Captura)';
+  $('#projName').textContent = p || '— ninguno';
+  if (document.activeElement !== $('#setProject')) $('#setProject').value = p;
+  if (document.activeElement !== $('#setCampaign')) $('#setCampaign').value = S.form.campaign || '';
   fillDatalists(); renderRecords(); renderSendInfo(); renderOdState(); renderSettingsProject();
   if (S.map) renderMapData();
 }
@@ -574,6 +584,18 @@ async function restore(file) {
 
 /* ---------------- ajustes ---------------- */
 function bindSettings() {
+  // Proyecto y campaña editables también desde Ajustes (mismo dato que Captura)
+  const syncPC = async (src, name) => {
+    const v = src.value.trim().replace(/\s+/g, '-');
+    if (v !== src.value) src.value = v;
+    $('#formCaptura').elements[name].value = v;
+    const prevP = S.form.project;
+    S.form = readForm(); await DB.setKv('form', S.form);
+    clearTimeout(syncPC._t); syncPC._t = setTimeout(() => { if (name === 'campaign' || prevP !== S.form.project) reload(); }, 500);
+    $('#ctxLine').textContent = `${S.set.specialist || 'sin código'} · ${S.form.project || '—'}/${S.form.campaign || '—'}`;
+  };
+  $('#setProject').addEventListener('input', e => syncPC(e.target, 'project'));
+  $('#setCampaign').addEventListener('input', e => syncPC(e.target, 'campaign'));
   $('#formSet').onsubmit = async e => {
     e.preventDefault(); const f = e.target; if (!f.reportValidity()) return;
     for (const el of f.elements) if (el.name) S.set[el.name] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? +el.value : el.value.trim();
