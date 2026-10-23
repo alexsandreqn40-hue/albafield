@@ -1,5 +1,5 @@
 /* Alba Field · service worker: la app abre y funciona sin señal. */
-const VERSION = 'geofield-1.0.1';
+const VERSION = 'geofield-1.0.2';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/onedrive.js', 'js/app.js',
