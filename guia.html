@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alba Field · Guía</title>
+<style>
+:root{--ink:#17251d;--muted:#5b665f;--bg:#f3f0e8;--card:#fffdf8;--line:#d9d3c4;--acc:#2d6a4f;--gold:#e9c46a}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:#1f3b2d;color:#fff;padding:28px 16px}header div{max-width:820px;margin:auto}
+header h1{margin:0 0 4px;font-size:28px}header p{margin:0;opacity:.85}
+main{max-width:820px;margin:auto;padding:16px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:0 0 16px}
+h2{font-size:20px;margin:0 0 10px}h3{font-size:16px;margin:16px 0 6px}
+ol,ul{padding-left:22px}li{margin:5px 0}
+code,kbd{background:#ece7da;border-radius:5px;padding:1px 5px;font-size:.92em}
+.tag{display:inline-block;background:var(--gold);color:#222;border-radius:999px;padding:1px 9px;font-size:13px;font-weight:700;margin-right:6px}
+.note{border-left:4px solid var(--acc);background:#eef5f0;padding:8px 12px;border-radius:6px}
+.warn{border-left:4px solid #b5651d;background:#fbf0e4;padding:8px 12px;border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600}
+</style></head><body>
+<header><div><h1>Alba Field</h1><p>Registro de campo con y sin señal · guía de instalación y uso · versión 1.0.0</p></div></header>
+<main>
+
+<section>
+<h2>Qué es y qué cambió respecto a GeoField 0.1.0</h2>
+<p>Alba Field es una aplicación web instalable (PWA): se abre desde un ícono en el teléfono, funciona <b>sin señal</b> y guarda todo en el propio teléfono. No hay que compilar APK, no necesita Android Studio, ni un servidor Python, ni permisos de TI para empezar.</p>
+<table>
+<tr><th>Tema</th><th>GeoField 0.1.0 (Flutter + servidor)</th><th>Alba Field 1.0.0</th></tr>
+<tr><td>Instalar</td><td>Instalar Flutter, Android SDK, compilar, firmar</td><td>Abrir un enlace y tocar «Instalar»</td></tr>
+<tr><td>iPhone</td><td>Requiere Mac + Xcode + cuenta Apple</td><td>Safari → «Agregar a inicio»</td></tr>
+<tr><td>Envío a OneDrive</td><td>Servidor HTTPS + app Entra obligatorios</td><td>Paquete ZIP compartido a la app OneDrive (sin configurar nada) o subida directa opcional</td></tr>
+<tr><td>Productos</td><td>Excel por especialista en el servidor</td><td>Excel + KMZ + fotos en el teléfono; GENERAL.xlsx consolidado en cualquier navegador</td></tr>
+<tr><td>Campos</td><td>Texto libre</td><td>Catálogos, autocompletado, sugerencia de estación cercana desde KMZ</td></tr>
+<tr><td>Coordenadas</td><td>WGS84</td><td>WGS84 + UTM (zona automática 17S/18S/19S) en foto y Excel</td></tr>
+<tr><td>QA/QC</td><td>—</td><td>Precisión GPS, antigüedad del GPS, distancia al punto KML, fecha EXIF, foto duplicada (SHA-256)</td></tr>
+<tr><td>Correcciones</td><td>No se podía editar</td><td>Edición de atributos (foto, hora y coordenadas bloqueadas) y «anular» sin borrar</td></tr>
+<tr><td>Respaldo</td><td>Solo restaurable al servidor</td><td>El mismo paquete ZIP se restaura en otro teléfono</td></tr>
+</table>
+<p class="note">El Excel usa las columnas de la plantilla de <b>GeoField Etapa 1</b> (ID_REGISTRO, FOTO, OBSERVACION, CATEGORIA, IMPORTANCIA, LATITUD, LONGITUD…) y el nombre de cada foto coincide con la columna FOTO, así que el panel R/Shiny de Etapa 1 puede leer los paquetes directamente.</p>
+</section>
+
+<section>
+<h2><span class="tag">Paso 1</span>Publicar la app (una sola vez, ~10 min)</h2>
+<p>La cámara y el GPS del navegador solo funcionan en una dirección <code>https://</code>. GitHub Pages lo da gratis.</p>
+<ol>
+<li>Entre a <b>github.com</b> desde la PC y cree una cuenta gratuita (si no tiene).</li>
+<li>Botón <b>New</b> (nuevo repositorio) → nombre <code>albafield</code> → <b>Public</b> → <b>Create repository</b>.</li>
+<li>En la página del repositorio, toque el enlace <b>uploading an existing file</b>.</li>
+<li>Abra la carpeta <code>AlbaField_v1.0.0</code> en el Explorador, seleccione <b>todo su contenido</b> (index.html, sw.js, carpetas js, vendor, icons…) y arrástrelo a la página. <i>index.html debe quedar en la raíz, no dentro de otra carpeta.</i></li>
+<li>Abajo, <b>Commit changes</b>.</li>
+<li><b>Settings → Pages</b> → «Build and deployment» → Source: <b>Deploy from a branch</b> → Branch: <b>main</b> / <b>(root)</b> → <b>Save</b>.</li>
+<li>Espere 1–2 minutos y recargue: aparecerá la dirección, del tipo <code>https://SU-USUARIO.github.io/albafield/</code>.</li>
+</ol>
+<p class="warn">El repositorio público solo contiene el código de la app. <b>Los datos de campo nunca se suben ahí</b>: viven en cada teléfono hasta que usted los entrega.</p>
+<p><b>Alternativa:</b> Netlify (app.netlify.com/drop) — cree una cuenta gratuita y arrastre la carpeta <code>AlbaField_v1.0.0</code>; le da una dirección https al instante.</p>
+</section>
+
+<section>
+<h2><span class="tag">Paso 2</span>Instalar en el teléfono</h2>
+<h3>Android (Chrome)</h3>
+<ol>
+<li>Abra <b>Chrome</b> y entre a su dirección (<code>https://SU-USUARIO.github.io/albafield/</code>).</li>
+<li>Menú <kbd>⋮</kbd> → <b>Instalar aplicación</b> (o «Agregar a la pantalla principal») → <b>Instalar</b>.</li>
+<li>Abra <b>Alba Field</b> desde el ícono nuevo (no desde Chrome).</li>
+<li>Cuando lo pida, permita <b>Cámara</b> y <b>Ubicación → Mientras se usa la app</b> y active <b>Ubicación precisa</b>.</li>
+<li>Ajustes → <b>Proteger datos contra borrado automático</b> (debe decir «protegido ✓»).</li>
+</ol>
+<h3>iPhone (Safari)</h3>
+<ol>
+<li>Abra la dirección en <b>Safari</b> → botón <b>Compartir</b> → <b>Agregar a inicio</b>.</li>
+<li>Abra desde el ícono; permita cámara, ubicación y «Movimiento y orientación» (para el norte).</li>
+</ol>
+<p class="note">Para compartir con los otros especialistas basta enviarles el enlace por WhatsApp; cada uno instala igual.</p>
+</section>
+
+<section>
+<h2><span class="tag">Paso 3</span>Prueba obligatoria antes de salir a campo (10 min)</h2>
+<ol>
+<li>Ajustes → código <code>ESP01</code> (cada especialista el suyo, sin repetir), nombre y especialidad → <b>Guardar</b>.</li>
+<li>Captura → proyecto y campaña (ej. <code>PROY01</code>, <code>CAMP01</code>) → estación, componente → <b>Tomar fotografía</b> → tome 2 fotos → Cancelar.</li>
+<li>Active <b>modo avión</b> (deje el GPS encendido), cierre la app por completo y ábrala de nuevo: debe abrir y mostrar sus 2 registros.</li>
+<li>Tome 1 foto más en modo avión.</li>
+<li>Quite modo avión → Entregar → <b>Generar y compartir paquete</b> → elija <b>OneDrive</b> → su carpeta → confirme «Sí, quedó guardado».</li>
+<li>En la PC abra el ZIP: Excel, KMZ (Google Earth), fotos rotuladas y originales.</li>
+</ol>
+</section>
+
+<section>
+<h2>Uso diario en campo</h2>
+<ul>
+<li>El indicador GPS es verde ≤10 m, ámbar hasta el umbral (30 m por defecto) y rojo por encima. Espere el verde a cielo abierto.</li>
+<li>La cámara integrada se queda abierta: puede tomar varias fotos seguidas de la misma estación. Cada foto es un registro con correlativo <code>ESP01-0001</code>, <code>ESP01-0002</code>…</li>
+<li>Si importó un KMZ de estaciones, aparece «📍 Punto cercano» para llenar la estación con un toque, y QA/QC avisa si la foto está a más de 50 m del punto con ese nombre.</li>
+<li>«Usar cámara del teléfono» sirve si la integrada falla; en ese modo no se registra rumbo.</li>
+<li>La foto rotulada lleva logo, proyecto, estación, fecha/hora con zona horaria, WGS84, UTM, precisión y norte magnético aproximado, y además EXIF GPS (QGIS «ImportPhotos» y Google Earth la ubican).</li>
+<li>La original se guarda intacta con su huella SHA-256 (cadena de custodia).</li>
+<li><b>No desinstale la app ni borre datos de Chrome sin entregar antes.</b> Entregue cada día con señal.</li>
+</ul>
+</section>
+
+<section>
+<h2>Entregar a OneDrive</h2>
+<h3>Opción 1 — Paquete (recomendada, sin configuración)</h3>
+<p>Entregar → Alcance «Solo lo no entregado» → <b>Generar y compartir paquete</b> → <b>OneDrive</b> → carpeta del proyecto. Contenido: <code>ESPxx_PROY_CAMP.xlsx</code> (hojas REGISTROS, RESUMEN, QAQC), <code>.kmz</code>, <code>fotos_rotuladas/</code>, <code>originales/</code>, <code>datos.json</code>, <code>LEEME.txt</code>. Si la señal es débil use «Solo Excel + KMZ (liviano)» y envíe el paquete completo después.</p>
+<p>Carpeta sugerida en OneDrive/SharePoint: <code>PROY01/CAMP01/ESP01/</code>.</p>
+<h3>Opción 2 — Subida directa automática (opcional, beta)</h3>
+<p>Sube fotos, Excel, KMZ y JSON a una carpeta de OneDrive/SharePoint cuando hay señal, sin pasar por el menú compartir. Requiere registrar la app en Microsoft Entra una vez:</p>
+<ol>
+<li><b>entra.microsoft.com</b> → Aplicaciones → <b>Registros de aplicaciones</b> → <b>Nuevo registro</b>.</li>
+<li>Nombre <code>Alba Field</code>; cuentas: según su caso (cuenta de trabajo de la empresa o personales).</li>
+<li>URI de redirección: plataforma <b>Aplicación de página única (SPA)</b> y la dirección exacta de la app, p. ej. <code>https://SU-USUARIO.github.io/albafield/</code>.</li>
+<li>Copie el <b>Id. de aplicación (cliente)</b>.</li>
+<li>Permisos de API → Microsoft Graph → Delegados: <code>Files.ReadWrite.All</code>, <code>User.Read</code>, <code>offline_access</code>.</li>
+<li>En la app: Ajustes → OneDrive → pegue el ID, elija el tipo de cuenta y pegue el <b>enlace compartido de la carpeta destino</b> (con permiso de edición) o una ruta de «Mis archivos» como <code>AlbaField/Campo</code> → Guardar.</li>
+<li>Entregar → Iniciar sesión Microsoft → Sincronizar ahora. Puede activar «Sincronizar sola cuando haya señal».</li>
+</ol>
+<p class="warn">En la cuenta corporativa (Walsh/SGS) el registro de la app y el permiso <code>Files.ReadWrite.All</code> normalmente los aprueba TI. Esta opción no se ha probado aún contra su tenant; hasta validarla use la Opción 1. La sesión de Microsoft dura aprox. 24 h y luego pide iniciar de nuevo.</p>
+<p>Estructura que crea: <code>PROY/CAMP/ESP/fotos_rotuladas</code>, <code>originales</code>, <code>registros/*.json</code>, <code>ESP_PROY_CAMP.xlsx</code>, <code>.kmz</code> y <code>datos_ESP.json</code>. Cada especialista escribe solo su carpeta, así no hay conflictos entre los 7.</p>
+</section>
+
+<section>
+<h2>Coordinador: consolidar el equipo</h2>
+<ol>
+<li>En la PC abra la app (misma dirección) → Entregar → <b>Coordinador: consolidar equipo</b>.</li>
+<li>Seleccione todos los paquetes ZIP de los especialistas (o los <code>datos_ESPxx.json</code> de la Opción 2).</li>
+<li>Se descarga <code>AlbaField_GENERAL_….zip</code> con <b>GENERAL.xlsx</b> (hoja GENERAL, una hoja por especialista, RESUMEN, QAQC, CONFLICTOS, FUENTES), un Excel por especialista, <b>GENERAL.kmz</b> y <code>datos_general.json</code>.</li>
+</ol>
+<p>Los repetidos se eliminan por ID; si el mismo registro llega editado se conserva la edición más reciente y queda anotado en CONFLICTOS.</p>
+</section>
+
+<section>
+<h2>Mapas y capas sin señal</h2>
+<ul>
+<li><b>Capas del proyecto:</b> Mapa → «Capa KMZ/KML» (estaciones, componentes, huella, accesos). Puntos, líneas y polígonos, incluso con huecos.</li>
+<li><b>Mapa base con señal:</b> OpenStreetMap; las zonas que vea con señal quedan guardadas para verlas luego sin señal.</li>
+<li><b>Mapa base offline propio</b> (ortofoto, imagen del proyecto) desde QGIS: Caja de herramientas → <i>Generar teselas XYZ (Directorio)</i> → extensión del área, zoom mín. 12 y máx. 17, formato PNG o JPG, <b>sin</b> invertir eje Y (TMS) → comprima la carpeta de salida en ZIP → añada si desea un <code>attribution.txt</code> con fuente y fecha → pase el ZIP al teléfono → Mapa → «Mapa offline ZIP». Recomendado hasta ~300 MB.</li>
+</ul>
+<p class="warn">Use solo imágenes que su licencia permita llevar offline. No se descargan imágenes de Google Earth.</p>
+</section>
+
+<section>
+<h2>Actualizar la app más adelante</h2>
+<ol>
+<li>Reemplace los archivos en GitHub (Add file → Upload files) con la nueva versión.</li>
+<li>En <code>sw.js</code> la línea <code>VERSION = 'geofield-1.0.0'</code> debe cambiar en cada versión (ej. <code>1.0.1</code>); así los teléfonos toman la nueva al abrir con señal.</li>
+<li>Los registros guardados no se pierden al actualizar.</li>
+</ol>
+</section>
+
+<section>
+<h2>Qué se probó y qué falta probar</h2>
+<p><b>Probado</b> (Chrome móvil emulado, cámara y GPS simulados): captura con cámara integrada y del sistema, rótulo, EXIF GPS, UTM (coincide con PROJ al centímetro), edición, sugerencia de estación desde KML, Excel (abre en LibreOffice/Excel), KMZ válido, paquete, consolidación, restauración en otro dispositivo, apertura sin conexión, mapa offline ZIP.</p>
+<p><b>Por probar en su teléfono real:</b> calidad de la cámara integrada en su modelo, precisión del GPS, norte magnético, y la subida directa a OneDrive con su cuenta.</p>
+<p><b>Límites:</b> la hora es la del reloj del teléfono (active hora automática); el norte es magnético aproximado, no un azimut de brújula calibrada; en iPhone el sistema puede borrar datos de apps web que no se abren en semanas — entregue a diario.</p>
+</section>
+</main></body></html>

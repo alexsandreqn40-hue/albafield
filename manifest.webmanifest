@@ -1,0 +1,17 @@
+{
+  "name": "Alba Field – Registro de campo",
+  "short_name": "Alba Field",
+  "description": "Captura de evidencias georreferenciadas sin señal: fotos rotuladas, GPS, UTM, Excel y KMZ.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f0e8",
+  "theme_color": "#1f3b2d",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
