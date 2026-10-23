@@ -1,5 +1,5 @@
 /* Alba Field · aplicación de campo offline (PWA). */
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const CODE_RE = /^[A-Za-z0-9_\-]{1,32}$/;
