@@ -1,7 +1,7 @@
 {
   "name": "Alba Field – Registro de campo",
   "short_name": "Alba Field",
-  "description": "Captura de evidencias georreferenciadas sin señal: fotos rotuladas, GPS, UTM, Excel y KMZ.",
+  "description": "Registro de campo sin señal: jornadas, estaciones, fotos rotuladas, notas de voz, Excel, KMZ, galería Word y envío a Google Drive.",
   "lang": "es",
   "start_url": "./",
   "scope": "./",

@@ -1,8 +1,8 @@
 /* Alba Field · service worker: la app abre y funciona sin señal. */
-const VERSION = 'geofield-1.0.2';
+const VERSION = 'albafield-2.0.0';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
-  'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/onedrive.js', 'js/app.js',
+  'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/drive.js', 'js/app.js', 'drive/Code.gs',
   'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/jszip.min.js', 'vendor/piexif.js',
   'vendor/images/layers.png', 'vendor/images/layers-2x.png', 'vendor/images/marker-icon.png', 'vendor/images/marker-icon-2x.png', 'vendor/images/marker-shadow.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'guia.html',
@@ -14,7 +14,7 @@ self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('geofield-') && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => (k.startsWith('geofield-') || k.startsWith('albafield-')) && k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener('fetch', e => {
@@ -41,7 +41,7 @@ self.addEventListener('fetch', e => {
     })());
     return;
   }
-  if (url.origin !== location.origin) return; // Microsoft login / Graph: siempre red
+  if (url.origin !== location.origin) return; // Google Drive (Apps Script): siempre red
 
   // App: navegación con red primero (actualiza), sin señal → caché
   if (req.mode === 'navigate') {

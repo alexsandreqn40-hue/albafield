@@ -16,7 +16,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>Alba Field</b><small id="ctxLine">Sin proyecto</small></div></div>
+  <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>Alba Field</b><small id="ctxLine">Sin jornada</small></div></div>
   <div class="badges">
     <span id="netBadge" class="badge">…</span>
     <span id="pendBadge" class="badge warn" hidden>0</span>
@@ -24,49 +24,106 @@
 </header>
 
 <main>
-<!-- ============ CAPTURA ============ -->
-<section id="view-captura" class="view active">
+<!-- ============ CAMPO: JORNADA → ESTACIÓN ============ -->
+<section id="view-campo" class="view active">
   <div class="gpsbar" id="gpsBar"><span class="dot"></span><span id="gpsText">GPS en espera</span></div>
-  <form id="formCaptura" autocomplete="off">
-    <div class="row2">
-      <label>Proyecto<input name="project" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. PROY01"></label>
-      <label>Campaña<input name="campaign" required pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. CAMP01"></label>
+
+  <!-- Paso 1: jornada -->
+  <div id="stepJornada">
+    <div class="steps"><span class="on">1 Jornada</span><span>2 Estación</span></div>
+    <form id="formJornada" class="card" autocomplete="off">
+      <h3>Datos de la jornada</h3>
+      <label>Proyecto<input name="project" required pattern="[A-Za-z0-9_\-]{1,32}" list="dlProject" placeholder="ej. MEIA-ILO" autocapitalize="characters"><datalist id="dlProject"></datalist></label>
+      <div class="row2">
+        <label>Campaña<input name="campaign" required pattern="[A-Za-z0-9_\-]{1,32}" list="dlCampaign" placeholder="ej. C01" autocapitalize="characters"><datalist id="dlCampaign"></datalist></label>
+        <label>Fecha<input name="date" type="date" required></label>
+      </div>
+      <label>Componente / especialidad<input name="component" required list="dlComponent" placeholder="ej. Flora"><datalist id="dlComponent"></datalist></label>
+      <div class="row2">
+        <label>Código evaluador<input name="specialist" required pattern="[A-Za-z0-9_\-]{1,16}" list="dlEvalCode" placeholder="ESP01" autocapitalize="characters"><datalist id="dlEvalCode"></datalist></label>
+        <label>Nombre<input name="person" list="dlEvalName" placeholder="Nombre y apellido"><datalist id="dlEvalName"></datalist></label>
+      </div>
+      <p class="hint">Solo letras, números, guion o guion bajo en los códigos. Se convierten a MAYÚSCULAS.</p>
+      <button class="big primary" type="submit">Siguiente: estaciones →</button>
+    </form>
+    <div class="card">
+      <h3>Jornadas recientes</h3>
+      <div id="jorList" class="list"></div>
     </div>
-    <label>Estación / punto
-      <input name="station" required list="dlStation" placeholder="ej. E-01">
-      <datalist id="dlStation"></datalist>
-    </label>
-    <button type="button" id="nearChip" class="chip" hidden></button>
-    <div class="row2">
-      <label>Componente<input name="component" required list="dlComponent" placeholder="ej. Flora"><datalist id="dlComponent"></datalist></label>
-      <label>Importancia
-        <select name="importance"><option>Baja</option><option selected>Media</option><option>Alta</option></select>
+  </div>
+
+  <!-- Paso 2: estación -->
+  <div id="stepEstacion" hidden>
+    <div class="steps"><span class="done" id="stepBack">1 Jornada ✎</span><span class="on">2 Estación</span></div>
+    <div class="jorHead" id="jorHead"></div>
+
+    <form id="formEstacion" class="card" autocomplete="off">
+      <div class="stTitle"><h3 id="stTitle">Nueva estación</h3><span id="stBadge" class="st local" hidden>sin guardar</span></div>
+      <label>Estación / punto
+        <input name="station" required list="dlStation" placeholder="ej. E-01" autocapitalize="characters">
+        <datalist id="dlStation"></datalist>
       </label>
+      <button type="button" id="nearChip" class="chip" hidden></button>
+      <label>Lugar / sector <small>(opcional)</small><input name="place" placeholder="Quebrada Honda, margen derecha"></label>
+      <label>Observaciones<textarea name="notes" rows="4" placeholder="Describa lo observado. Para dictar, toque el micrófono del teclado."></textarea></label>
+
+      <div class="block">
+        <div class="blockHead"><b>🎙 Notas de voz</b><span id="recTimer" class="rec-timer" hidden>● 00:00</span></div>
+        <button type="button" class="ghost wide" id="btnRec">🎙 Grabar nota de voz</button>
+        <div id="audList" class="audList"></div>
+      </div>
+
+      <div class="block">
+        <div class="blockHead"><b>📷 Fotografías</b><small id="phCount">0</small></div>
+        <div class="row3">
+          <button type="button" class="primary" id="btnCam">📷 Cámara</button>
+          <button type="button" class="ghost" id="btnSysCam">Cámara del teléfono</button>
+          <button type="button" class="ghost" id="btnGal">Galería</button>
+        </div>
+        <input type="file" id="sysCam" accept="image/*" capture="environment" hidden>
+        <input type="file" id="galIn" accept="image/*" multiple hidden>
+        <div id="stPhotos" class="phGrid"></div>
+        <p class="hint">Toque una foto para escribir su leyenda. La leyenda aparece en la galería Word.</p>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="big primary" id="btnSaveSt">✓ Guardar estación</button>
+        <div class="row2">
+          <button type="button" class="ghost" id="btnNewSt">+ Nueva estación</button>
+          <button type="button" class="ghost" id="btnCloseJor">Cerrar jornada</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="card">
+      <h3>Estaciones de esta jornada <small id="stCount"></small></h3>
+      <div id="stList" class="list"></div>
     </div>
-    <label>Categoría<input name="category" list="dlCategory" placeholder="Hallazgo, Avistamiento, Monitoreo…"><datalist id="dlCategory"></datalist></label>
-    <label>Lugar / sector<input name="place" placeholder="Quebrada Honda, margen derecha"></label>
-    <label>Observación<textarea name="notes" rows="3" placeholder="Describa lo observado"></textarea></label>
-    <details class="more"><summary>Más campos</summary>
-      <label>Acción / seguimiento<input name="action" placeholder="Evaluar delimitación"></label>
-      <label>Versión de plantilla<input name="template_version" pattern="[A-Za-z0-9_\-\.]{1,16}" value="v1"></label>
-    </details>
-    <div class="actions">
-      <button type="button" class="big primary" id="btnCam">📷 Tomar fotografía</button>
-      <button type="button" class="ghost" id="btnSysCam">Usar cámara del teléfono</button>
-      <input type="file" id="sysCam" accept="image/*" capture="environment" hidden>
-    </div>
-    <p class="hint">Cada fotografía es un registro. Repita la misma estación para agrupar varias fotos. Los campos quedan guardados para la siguiente foto.</p>
-  </form>
+  </div>
 </section>
 
-<!-- ============ REGISTROS ============ -->
-<section id="view-registros" class="view">
+<!-- ============ FOTOS ============ -->
+<section id="view-fotos" class="view">
   <div class="toolbar">
-    <select id="fCamp"></select>
-    <input id="fText" type="search" placeholder="Buscar estación, nota…">
+    <select id="fScope">
+      <option value="jor">Jornada actual</option>
+      <option value="camp">Campaña actual</option>
+      <option value="pend">Pendientes de enviar</option>
+      <option value="all">Todas</option>
+    </select>
+    <input id="fText" type="search" placeholder="Buscar estación, leyenda…">
+  </div>
+  <div class="selbar">
+    <span id="selInfo">0 seleccionadas</span>
+    <button class="sm ghost" id="selAll">Todas</button>
+    <button class="sm ghost" id="selNone">Ninguna</button>
   </div>
   <div id="qaBox" class="qa"></div>
-  <div id="recList" class="list"></div>
+  <div id="galGrid" class="galGrid"></div>
+  <div class="sticky">
+    <button class="primary" id="btnSendSel">☁️ Enviar seleccionadas a Drive</button>
+    <button class="ghost" id="btnCopySel">💾 Copia en el teléfono</button>
+  </div>
 </section>
 
 <!-- ============ MAPA ============ -->
@@ -74,55 +131,63 @@
   <div id="map"></div>
   <div class="mapbar">
     <button id="btnLocate" class="ghost sm">◎ Mi ubicación</button>
-    <label class="filebtn sm">Capa KMZ/KML<input type="file" id="kmlIn" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" hidden></label>
+    <label class="filebtn sm">+ Capa KMZ/KML<input type="file" id="kmlIn" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" hidden></label>
     <label class="filebtn sm">Mapa offline ZIP<input type="file" id="tilesIn" accept=".zip,application/zip" hidden></label>
     <button id="btnLayers" class="ghost sm">Capas</button>
   </div>
+  <div class="legend"><span><i style="background:#2f9e5b"></i>Evaluada</span><span><i style="background:#e9c46a"></i>Pendiente (KMZ)</span><span><i style="background:#2563eb"></i>Mis estaciones</span></div>
   <div id="layerPanel" class="panel" hidden></div>
 </section>
 
-<!-- ============ ENVIAR ============ -->
+<!-- ============ ENTREGAR ============ -->
 <section id="view-enviar" class="view">
   <h2>Entregar datos</h2>
   <div class="card">
-    <h3>1 · Paquete para compartir <small>(funciona siempre)</small></h3>
-    <p>Genera un ZIP con Excel, KMZ, fotos rotuladas, originales y datos. Compártalo a la app de OneDrive, Teams, Drive o correo. También sirve de respaldo.</p>
+    <h3>Google Drive</h3>
+    <p id="drState" class="hint">No configurado. Ver Ajustes → Google Drive.</p>
+    <p class="hint">Estructura: <code>PROYECTO / CAMPAÑA / COMPONENTE / EVALUADOR / FECHA / FOTOS · AUDIOS · PRODUCTOS</code>. Se envían solo las fotos seleccionadas. La matriz Excel, el KMZ y la galería Word se regeneran en cada envío.</p>
+    <div class="actions">
+      <button class="big primary" id="btnDrive">☁️ Enviar ahora a Drive</button>
+    </div>
+    <label class="check"><input type="checkbox" id="drAuto"> Enviar solo cuando haya señal (con la app abierta)</label>
+    <label class="check"><input type="checkbox" id="drCopy"> Guardar también una copia ZIP en el teléfono al enviar</label>
+    <div id="drLog" class="log"></div>
+  </div>
+
+  <div class="card">
+    <h3>Copia en el teléfono / compartir</h3>
+    <p>Genera un ZIP con la misma estructura de carpetas (FOTOS, AUDIOS, PRODUCTOS). Se guarda en <b>Descargas</b> o se comparte a OneDrive, WhatsApp o correo.</p>
     <label>Alcance
       <select id="pkScope">
-        <option value="pend">Solo lo no entregado</option>
-        <option value="today">Solo hoy</option>
-        <option value="all">Toda la campaña actual</option>
+        <option value="jor">Jornada actual</option>
+        <option value="pend">Solo lo no enviado</option>
+        <option value="camp">Toda la campaña actual</option>
+        <option value="all">Todo lo del teléfono</option>
       </select>
     </label>
-    <label class="check"><input type="checkbox" id="pkOrig" checked> Incluir fotos originales (evidencia completa)</label>
+    <label class="check"><input type="checkbox" id="pkOrig"> Incluir fotos originales sin rótulo</label>
     <p id="pkInfo" class="hint"></p>
     <div class="actions">
-      <button class="big primary" id="btnPack">Generar y compartir paquete</button>
-      <button class="ghost" id="btnLight">Solo Excel + KMZ (liviano)</button>
+      <button class="primary" id="btnPack">💾 Generar ZIP</button>
+    </div>
+    <h3>Productos sueltos</h3>
+    <div class="row3">
+      <button class="ghost sm" id="btnXlsx">Matriz Excel</button>
+      <button class="ghost sm" id="btnKmz">KMZ fotos</button>
+      <button class="ghost sm" id="btnDocx">Galería Word</button>
     </div>
   </div>
 
   <div class="card">
-    <h3>2 · Subida directa a OneDrive <small>(opcional, beta)</small></h3>
-    <p id="odState" class="hint">No configurado. Ver Ajustes → OneDrive.</p>
-    <div class="actions">
-      <button class="ghost" id="btnOdLogin">Iniciar sesión Microsoft</button>
-      <button class="primary" id="btnOdSync">Sincronizar ahora</button>
-    </div>
-    <label class="check"><input type="checkbox" id="odAuto"> Sincronizar sola cuando haya señal (con la app abierta)</label>
-    <div id="odLog" class="log"></div>
-  </div>
-
-  <div class="card">
-    <h3>3 · Coordinador: consolidar equipo</h3>
-    <p>Seleccione los paquetes ZIP (o <code>datos.json</code>) de cada especialista. Se genera GENERAL.xlsx con una hoja por especialista, hoja QAQC y un KMZ general.</p>
+    <h3>Coordinador: consolidar equipo</h3>
+    <p>Seleccione los ZIP de cada evaluador (o sus archivos <code>datos_*.json</code> de la carpeta PRODUCTOS). Se genera GENERAL.xlsx, KMZ general y datos consolidados.</p>
     <label class="filebtn">Elegir paquetes…<input type="file" id="consIn" accept=".zip,.json" multiple hidden></label>
     <div id="consLog" class="log"></div>
   </div>
 
   <div class="card">
     <h3>Restaurar respaldo en este teléfono</h3>
-    <p>Recupera registros y fotos desde un paquete ZIP de Alba Field. No duplica los que ya existen.</p>
+    <p>Recupera jornadas, estaciones, fotos y audios desde un ZIP de Alba Field. No duplica lo que ya existe.</p>
     <label class="filebtn">Elegir ZIP…<input type="file" id="restoreIn" accept=".zip" hidden></label>
   </div>
 </section>
@@ -130,13 +195,51 @@
 <!-- ============ AJUSTES ============ -->
 <section id="view-ajustes" class="view">
   <h2>Ajustes</h2>
-  <form id="formSet" class="card">
-    <h3>Especialista</h3>
+  <div class="card">
+    <h3>Proyecto a configurar</h3>
+    <input id="cfgProject" pattern="[A-Za-z0-9_\-]{1,32}" list="dlProject" placeholder="ej. MEIA-ILO" autocapitalize="characters">
+    <p class="hint">Por defecto, el proyecto de la jornada actual. El equipo, los componentes y el rótulo se guardan por proyecto.</p>
+  </div>
+
+  <div class="card">
+    <h3>Equipo y catálogos</h3>
+    <label>Evaluadores (uno por línea: <code>CÓDIGO | Nombre</code>)<textarea id="catEval" rows="4" placeholder="ESP01 | Juan Pérez&#10;ESP02 | María López"></textarea></label>
+    <label>Componentes / especialidades (uno por línea)<textarea id="catComp" rows="4"></textarea></label>
+    <label>Campañas (una por línea)<textarea id="catCamp" rows="2" placeholder="C01&#10;C02"></textarea></label>
+    <button class="primary" id="btnCats">Guardar catálogos</button>
+  </div>
+
+  <div class="card">
+    <h3>Rótulo de las fotos</h3>
+    <label class="filebtn">Logo del proyecto (PNG/JPG)<input type="file" id="logoIn" accept="image/png,image/jpeg" hidden></label>
+    <button type="button" class="sm ghost" id="logoDel" hidden>Quitar logo</button>
     <div class="row2">
-      <label>Código<input name="specialist" required pattern="[A-Za-z0-9_\-]{1,16}" placeholder="ESP01"></label>
-      <label>Responsable<input name="person" placeholder="Nombre y apellido"></label>
+      <label>Posición del logo<select id="sLogoPos"><option value="tr">Arriba derecha</option><option value="tl">Arriba izquierda</option><option value="br">Abajo derecha</option><option value="bl">Abajo izquierda</option></select></label>
+      <label>Fondo del logo<select id="sLogoBg"><option value="1">Blanco</option><option value="0">Sin fondo</option></select></label>
     </div>
-    <label>Especialidad<input name="specialty" placeholder="Flora, Fauna, Calidad ambiental…"></label>
+    <label>Tamaño del logo: <b id="sLogoSizeV">20</b> % del ancho<input type="range" id="sLogoSize" min="8" max="40" value="20"></label>
+    <label>Banda de datos<select id="sBandPos"><option value="bottom">Abajo</option><option value="top">Arriba</option></select></label>
+    <p class="hint">Campos visibles en la banda:</p>
+    <div class="checks" id="sFields"></div>
+    <canvas id="stampPrev" class="stampPrev" width="800" height="600"></canvas>
+    <button class="primary" id="btnStamp">Guardar rótulo</button>
+    <p class="hint">Se aplica a las fotos nuevas. Al editar una estación o leyenda, sus fotos se vuelven a rotular.</p>
+  </div>
+
+  <form id="formDrive" class="card">
+    <h3>Google Drive</h3>
+    <p class="hint">Se usa un receptor gratuito en su cuenta Google (sin tarjeta ni registro de desarrollador). <a href="guia.html#drive" target="_blank">Ver cómo crearlo</a> · <a href="drive/Code.gs" download="AlbaField_receptor.gs">descargar código</a></p>
+    <label>URL del receptor (termina en /exec)<input name="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label>Enlace de la carpeta de Drive<input name="folder" placeholder="https://drive.google.com/drive/folders/…"></label>
+    <label>Clave<input name="token" placeholder="la misma CLAVE del script"></label>
+    <label class="check"><input type="checkbox" name="orig"> Enviar también las fotos originales (más datos móviles)</label>
+    <div class="row2">
+      <button class="primary" type="submit">Guardar</button>
+      <button class="ghost" type="button" id="btnPing">Probar conexión</button>
+    </div>
+  </form>
+
+  <form id="formSet" class="card">
     <h3>Captura</h3>
     <label class="check"><input type="checkbox" name="north" checked> Dibujar norte magnético aproximado en la foto</label>
     <label>Precisión GPS máxima sin confirmar (m)<input name="maxAcc" type="number" min="3" max="500" value="30"></label>
@@ -145,53 +248,21 @@
   </form>
 
   <div class="card">
-    <h3>Proyecto y campaña</h3>
-    <div class="row2">
-      <label>Proyecto<input id="setProject" pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. PROY01" autocomplete="off"></label>
-      <label>Campaña<input id="setCampaign" pattern="[A-Za-z0-9_\-]{1,32}" placeholder="ej. CAMP01" autocomplete="off"></label>
-    </div>
-    <p class="hint">Solo letras, números, guion o guion bajo (sin espacios). Es el mismo dato de la pestaña Captura. Proyecto actual: <b id="projName">—</b></p>
-    <label class="filebtn">Logo del proyecto (PNG/JPG)<input type="file" id="logoIn" accept="image/png,image/jpeg" hidden></label>
-    <img id="logoPrev" class="logoPrev" alt="" hidden>
-    <label>Componentes (uno por línea)<textarea id="catComp" rows="4"></textarea></label>
-    <label>Categorías (uno por línea)<textarea id="catCat" rows="4"></textarea></label>
-    <button class="primary" id="btnCats">Guardar catálogos</button>
-  </div>
-
-  <form id="formOd" class="card">
-    <h3>OneDrive / SharePoint (opcional)</h3>
-    <p class="hint">Requiere una aplicación registrada en Microsoft Entra (tipo SPA). Ver la guía. Sin esto use el paquete para compartir.</p>
-    <label>ID de aplicación (client ID)<input name="clientId" placeholder="00000000-0000-0000-0000-000000000000"></label>
-    <label>Tipo de cuenta<select name="tenant"><option value="common">Personal o de trabajo</option><option value="organizations">Solo de trabajo/escuela</option><option value="consumers">Solo personal</option></select></label>
-    <label>Carpeta destino: enlace compartido <u>o</u> ruta en Mi OneDrive
-      <input name="target" placeholder="https://…sharepoint.com/:f:/… o  AlbaField/Campo"></label>
-    <button class="primary" type="submit">Guardar OneDrive</button>
-  </form>
-
-  <div class="card">
-    <h3>Almacenamiento</h3>
+    <h3>Almacenamiento y versión</h3>
     <p id="storeInfo" class="hint">…</p>
-    <button class="ghost" id="btnPersist">Proteger datos contra borrado automático</button>
-  </div>
-
-  <div class="card help">
-    <h3>Ayuda rápida</h3>
-    <ol>
-      <li>Ajustes → escriba su código de especialista (ESP01…).</li>
-      <li>Captura → proyecto, campaña, estación y componente → <b>Tomar fotografía</b>.</li>
-      <li>Sin señal no pasa nada: todo queda en el teléfono.</li>
-      <li>Con señal → Entregar → <b>Generar y compartir paquete</b> → elegir OneDrive y la carpeta.</li>
-      <li>No desinstale la app ni borre datos del navegador sin entregar antes.</li>
-    </ol>
-    <p><a href="guia.html" target="_blank">Abrir la guía completa</a></p>
+    <div class="actions">
+      <button class="ghost" id="btnPersist">Proteger datos contra borrado automático</button>
+      <button class="ghost" id="btnUpdate">Buscar actualización</button>
+    </div>
     <p class="hint" id="verLine"></p>
+    <p><a href="guia.html" target="_blank">Abrir la guía completa</a></p>
   </div>
 </section>
 </main>
 
 <nav class="tabs">
-  <button data-v="captura" class="on"><span>📷</span>Captura</button>
-  <button data-v="registros"><span>📋</span>Registros</button>
+  <button data-v="campo" class="on"><span>📝</span>Campo</button>
+  <button data-v="fotos"><span>🖼️</span>Fotos</button>
   <button data-v="mapa"><span>🗺️</span>Mapa</button>
   <button data-v="enviar"><span>☁️</span>Entregar</button>
   <button data-v="ajustes"><span>⚙️</span>Ajustes</button>
@@ -204,14 +275,14 @@
     <div id="camInfo">…</div>
     <div id="camHeading">Rumbo —</div>
   </div>
+  <div class="camCap"><input id="camCaption" placeholder="Leyenda de la foto (opcional)" autocomplete="off"></div>
   <div class="camBar">
-    <button id="camClose" class="ghost light">Cancelar</button>
+    <button id="camClose" class="ghost light">Listo</button>
     <button id="camShoot" class="shutter" aria-label="Tomar"></button>
-    <span class="spacer"></span>
+    <span class="camCount" id="camCount">0</span>
   </div>
 </div>
 
-<!-- Diálogo genérico -->
 <dialog id="dlg"><form method="dialog"><div id="dlgBody"></div><menu id="dlgBtns"></menu></form></dialog>
 <div id="toast" class="toast" hidden></div>
 <div id="busy" class="busy" hidden><div class="spin"></div><p id="busyText">Procesando…</p></div>
@@ -223,7 +294,7 @@
 <script src="js/geo.js"></script>
 <script src="js/photo.js"></script>
 <script src="js/exports.js"></script>
-<script src="js/onedrive.js"></script>
+<script src="js/drive.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

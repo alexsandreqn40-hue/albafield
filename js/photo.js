@@ -27,52 +27,64 @@ const Photo = (() => {
 
   function fmtOffset(min) { const s = min >= 0 ? '+' : '-', a = Math.abs(min); return `UTC${s}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`; }
 
-  /* Genera la copia rotulada. rec = registro ya con coordenadas; logo = Blob o null. */
-  async function stamp(original, rec, { logo = null, north = true, quality = 0.9 } = {}) {
+  /* Genera la copia rotulada.
+     p = metadatos de la foto (lat, lon, heading…); lines = textos de la banda ya armados según la configuración del proyecto.
+     cfg = { logoPos: tl|tr|bl|br, logoSize: % del ancho, logoBg: bool, bandPos: top|bottom } */
+  async function stamp(original, p, { lines = [], logo = null, cfg = {}, north = true, quality = 0.9 } = {}) {
     const img = await loadImg(original);
     const s = Math.min(1, 4096 / Math.max(img.naturalWidth, img.naturalHeight));
     const W = Math.round(img.naturalWidth * s), H = Math.round(img.naturalHeight * s);
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
     g.drawImage(img, 0, 0, W, H);
+    drawOverlay(g, W, H, p, { lines, cfg, north, logoImg: logo ? await loadImg(logo).catch(() => null) : null });
+    let blob = await toBlob(c, quality);
+    if (p && p.lat != null) { try { blob = await writeExif(blob, p); } catch (e) { console.warn('EXIF no escrito', e); } }
+    return { blob, width: W, height: H };
+  }
+
+  /* Dibuja banda de datos, logo y norte sobre un lienzo (se usa también para la vista previa en Ajustes). */
+  function drawOverlay(g, W, H, p, { lines, cfg = {}, north, logoImg }) {
+    const bandTop = cfg.bandPos === 'top';
     const fs = Math.max(14, Math.round(Math.min(W, H) / 34));
     g.font = `600 ${fs}px system-ui, -apple-system, Roboto, sans-serif`;
-    const lines = [
-      `${rec.project} · ${rec.campaign} · ${rec.specialist}${rec.person ? ' · ' + rec.person : ''}`,
-      `Estación: ${rec.station}  |  ${rec.component}${rec.category ? ' · ' + rec.category : ''}`,
-      rec.place ? `Lugar: ${rec.place}` : null,
-      `${rec.time_local.replace('T', ' ').slice(0, 19)} (${fmtOffset(rec.utc_offset_minutes)})`,
-      `WGS84: ${rec.lat.toFixed(6)}, ${rec.lon.toFixed(6)}  ±${rec.accuracy.toFixed(0)} m${rec.alt != null ? '  ·  ' + Math.round(rec.alt) + ' msnm' : ''}`,
-      `UTM ${rec.utm_zone}: E ${Math.round(rec.utm_e)}  N ${Math.round(rec.utm_n)}`,
-      north ? `Rumbo cámara (magnético aprox.): ${rec.heading == null ? 'no disponible' : Math.round(rec.heading) + '°'}` : null,
-    ].filter(Boolean).map(t => fit(g, t, W - fs * 2));
+    const txt = (lines || []).filter(Boolean).map(t => fit(g, t, W - fs * 2));
     const lh = Math.round(fs * 1.35), pad = Math.round(fs * 0.8);
-    const bandH = lines.length * lh + pad * 2;
-    g.fillStyle = 'rgba(0,0,0,0.62)'; g.fillRect(0, H - bandH, W, bandH);
-    g.fillStyle = '#fff'; g.textBaseline = 'top';
-    lines.forEach((t, i) => g.fillText(t, fs, H - bandH + pad + i * lh));
-
-    if (logo) {
-      try {
-        const li = await loadImg(logo);
-        const lw = Math.round(W * 0.2), lhh = Math.round(lw * li.naturalHeight / li.naturalWidth);
-        const x = W - lw - fs, y = fs;
-        g.fillStyle = 'rgba(255,255,255,0.92)'; g.fillRect(x - 8, y - 8, lw + 16, lhh + 16);
-        g.drawImage(li, x, y, lw, lhh);
-      } catch (_) { /* logo dañado: se omite sin bloquear la captura */ }
+    const bandH = txt.length ? txt.length * lh + pad * 2 : 0;
+    if (bandH) {
+      const y0 = bandTop ? 0 : H - bandH;
+      g.fillStyle = 'rgba(0,0,0,0.62)'; g.fillRect(0, y0, W, bandH);
+      g.fillStyle = '#fff'; g.textBaseline = 'top'; g.textAlign = 'left';
+      txt.forEach((t, i) => g.fillText(t, fs, y0 + pad + i * lh));
     }
-    if (north && rec.heading != null) {
-      const r = Math.round(Math.min(W, H) * 0.05), cx = fs + r * 1.3, cy = fs + r * 1.3;
+    const pos = cfg.logoPos || 'tr';
+    const logoTop = pos[0] === 't', logoLeft = pos[1] === 'l';
+    let logoBox = null;
+    if (logoImg) {
+      const lw = Math.round(W * Math.min(45, Math.max(5, +cfg.logoSize || 20)) / 100);
+      const lhh = Math.round(lw * logoImg.naturalHeight / logoImg.naturalWidth);
+      const m = fs, bg = cfg.logoBg !== false ? 8 : 0;
+      const x = logoLeft ? m + bg : W - lw - m - bg;
+      let y = logoTop ? m + bg : H - lhh - m - bg;
+      if (logoTop && bandTop) y += bandH; if (!logoTop && !bandTop) y -= bandH;
+      if (bg) { g.fillStyle = 'rgba(255,255,255,0.92)'; g.fillRect(x - bg, y - bg, lw + bg * 2, lhh + bg * 2); }
+      g.drawImage(logoImg, x, y, lw, lhh);
+      logoBox = { top: logoTop, left: logoLeft };
+    }
+    if (north && p && p.heading != null) {
+      const r = Math.round(Math.min(W, H) * 0.05);
+      // esquina libre: del lado contrario a la banda; si el logo ocupa esa fila, al otro costado
+      const top = !bandTop;
+      const left = logoBox && logoBox.top === top ? !logoBox.left : true;
+      const cx = left ? fs + r * 1.3 : W - fs - r * 1.3;
+      const cy = top ? fs + r * 1.6 : H - fs - r * 1.3;
       g.save(); g.fillStyle = 'rgba(255,255,255,0.85)'; g.beginPath(); g.arc(cx, cy, r * 1.3, 0, Math.PI * 2); g.fill();
-      g.translate(cx, cy); g.rotate(-rec.heading * Math.PI / 180);
+      g.translate(cx, cy); g.rotate(-p.heading * Math.PI / 180);
       g.beginPath(); g.moveTo(0, -r); g.lineTo(r * 0.45, r * 0.75); g.lineTo(0, r * 0.4); g.lineTo(-r * 0.45, r * 0.75); g.closePath();
       g.fillStyle = '#c0392b'; g.fill();
       g.fillStyle = '#111'; g.font = `700 ${Math.round(r * 0.55)}px system-ui, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'bottom';
       g.fillText('N', 0, -r * 1.02); g.restore();
     }
-    let blob = await toBlob(c, quality);
-    try { blob = await writeExif(blob, rec); } catch (e) { console.warn('EXIF no escrito', e); }
-    return { blob, width: W, height: H };
   }
   function fit(g, t, max) { if (g.measureText(t).width <= max) return t; while (t.length > 4 && g.measureText(t + '…').width > max) t = t.slice(0, -1); return t + '…'; }
 
@@ -87,7 +99,7 @@ const Photo = (() => {
     const loc = rec.time_local.slice(0, 19).replace('T', ' ').replace(/-/g, ':');
     const zero = {}, exif = {}, gps = {};
     zero[P.ImageIFD.Make] = 'Alba Field'; zero[P.ImageIFD.Software] = 'Alba Field ' + rec.app_version;
-    zero[P.ImageIFD.ImageDescription] = ascii(`${rec.project}/${rec.campaign}/${rec.specialist}/${rec.station} ${rec.component}`).slice(0, 250);
+    zero[P.ImageIFD.ImageDescription] = ascii(`${rec.project}/${rec.campaign}/${rec.specialist}/${rec.station} ${rec.caption || rec.component || ''}`).slice(0, 250);
     zero[P.ImageIFD.Artist] = ascii(rec.person || rec.specialist).slice(0, 64);
     zero[P.ImageIFD.DateTime] = loc; zero[P.ImageIFD.Orientation] = 1;
     exif[P.ExifIFD.DateTimeOriginal] = loc; exif[P.ExifIFD.DateTimeDigitized] = loc;
@@ -117,5 +129,5 @@ const Photo = (() => {
     } catch (_) { return null; }
   }
 
-  return { stamp, thumb, sha256, exifDate, loadImg };
+  return { fmtOffset, stamp, drawOverlay, thumb, sha256, exifDate, loadImg, readDataURL };
 })();

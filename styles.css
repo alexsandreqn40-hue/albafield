@@ -95,3 +95,58 @@ code{background:#eee;padding:1px 4px;border-radius:4px}
 .help ol{padding-left:20px;margin:0}.help li{margin:4px 0}
 .leaflet-popup-content img{width:200px;border-radius:6px}
 @media (min-width:760px){main{max-width:760px;margin:0 auto;width:100%}}
+/* ---------- Alba Field 2 ---------- */
+label small{font-weight:400}
+.steps{display:flex;gap:6px;margin:0 0 10px}
+.steps span{flex:1;text-align:center;font-size:13px;font-weight:700;padding:7px;border-radius:999px;background:#e6e1d4;color:var(--muted)}
+.steps span.on{background:var(--forest);color:#fff}
+.steps span.done{background:#d7efdf;color:var(--forest);cursor:pointer}
+.jorHead{background:var(--forest);color:#fff;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:14px}
+.jorHead b{font-size:16px}.jorHead small{opacity:.85}
+.stTitle{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.block{border-top:1px dashed var(--line);padding-top:10px;margin-top:6px}
+.blockHead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.blockHead small{color:var(--muted)}
+button.wide{width:100%}
+button.recOn{background:var(--bad);border-color:var(--bad);color:#fff}
+.rec-timer{color:var(--bad);font-weight:700;font-variant-numeric:tabular-nums}
+.audList{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.aud{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.aud audio{flex:1;height:36px;min-width:0}
+.aud .x{border:0;padding:6px 8px;color:var(--bad);background:transparent}
+.row3{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:6px}
+.row3 button{padding:10px 6px;font-size:14px}
+.phGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.ph{position:relative;border-radius:10px;overflow:hidden;background:#ddd;aspect-ratio:1/1}
+.ph img{width:100%;height:100%;object-fit:cover;display:block}
+.ph .cap{position:absolute;left:0;right:0;bottom:0;font-size:11px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.75));padding:14px 6px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ph .n{position:absolute;top:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px}
+.ph.off{opacity:.45}
+.ph .sel{position:absolute;top:4px;right:4px;width:26px;height:26px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:700}
+.ph .sel.on{background:var(--accent)}
+.ph .up{position:absolute;bottom:22px;right:4px;font-size:12px}
+.galGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;padding-bottom:70px}
+.galCard{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.galCard .ph{border-radius:0}
+.galCard .meta{padding:6px 8px;font-size:12px}
+.galCard .meta b{display:block;font-size:13px}
+.galCard .meta span{color:var(--muted)}
+.selbar{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.selbar span{flex:1;font-size:14px;font-weight:600}
+.sticky{position:fixed;left:0;right:0;bottom:calc(64px + var(--safe-b));display:grid;grid-template-columns:1.4fr 1fr;gap:8px;padding:8px 14px;background:rgba(243,240,232,.96);border-top:1px solid var(--line);z-index:400}
+@media (min-width:760px){.sticky{max-width:760px;margin:0 auto}}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted);padding:0 0 6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin-bottom:8px}
+.checks label.check{font-size:14px;margin:0 0 6px}
+.stampPrev{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);margin:6px 0 10px;background:#888}
+.camCap{position:absolute;left:10px;right:10px;bottom:calc(120px + var(--safe-b))}
+.camCap input{background:rgba(0,0,0,.5);color:#fff;border-color:rgba(255,255,255,.5)}
+.camCap input::placeholder{color:#ddd}
+.camCount{width:90px;text-align:center;color:#fff;font-weight:700;font-size:18px}
+.stRow{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px;align-items:center}
+.stRow img{width:56px;height:56px;object-fit:cover;border-radius:8px;background:#ddd;flex:none}
+.stRow .t{font-weight:700}.stRow .s{font-size:13px;color:var(--muted)}
+.stRow.cur{border-color:var(--accent);box-shadow:0 0 0 2px rgba(45,106,79,.2)}
+.stRow.void{opacity:.5}
+dialog textarea,dialog input{margin-bottom:8px}

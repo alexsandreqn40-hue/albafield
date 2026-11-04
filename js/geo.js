@@ -53,21 +53,45 @@ const Geo = (() => {
     const doc = new DOMParser().parseFromString(text, 'application/xml');
     if (doc.getElementsByTagName('parsererror').length) throw new Error('KML con formato inválido');
     const out = [];
+    // estilos del KML (colores de líneas, polígonos e íconos) para dibujarlos igual que en Google Earth
+    const styles = {}, maps = {};
+    for (const st of doc.getElementsByTagNameNS('*', 'Style')) { const id = st.getAttribute('id'); if (id) styles[id] = parseStyle(st); }
+    for (const sm of doc.getElementsByTagNameNS('*', 'StyleMap')) {
+      const id = sm.getAttribute('id'); if (!id) continue;
+      for (const pr of sm.getElementsByTagNameNS('*', 'Pair')) if (childText(pr, 'key') === 'normal') maps[id] = childText(pr, 'styleUrl').replace(/^.*#/, '');
+    }
+    const resolve = url => { const id = (url || '').replace(/^.*#/, ''); return styles[maps[id] || id] || null; };
     const pms = doc.getElementsByTagNameNS('*', 'Placemark');
     for (const pm of pms) {
       const name = childText(pm, 'name') || 'Sin nombre';
       const desc = (childText(pm, 'description') || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
-      for (const g of pm.getElementsByTagNameNS('*', 'Point')) { const c = coordsOf(g); if (c.length) out.push({ name, desc, type: 'Point', coords: [c[0]] }); }
-      for (const g of pm.getElementsByTagNameNS('*', 'LineString')) { const c = coordsOf(g); if (c.length > 1) out.push({ name, desc, type: 'LineString', coords: c }); }
+      const inline = [...pm.children].find(c => c.localName === 'Style');
+      const style = inline ? parseStyle(inline) : resolve(childText(pm, 'styleUrl'));
+      for (const g of pm.getElementsByTagNameNS('*', 'Point')) { const c = coordsOf(g); if (c.length) out.push({ name, desc, type: 'Point', coords: [c[0]], style }); }
+      for (const g of pm.getElementsByTagNameNS('*', 'LineString')) { const c = coordsOf(g); if (c.length > 1) out.push({ name, desc, type: 'LineString', coords: c, style }); }
       for (const g of pm.getElementsByTagNameNS('*', 'Polygon')) {
         const ob = g.getElementsByTagNameNS('*', 'outerBoundaryIs')[0];
         const c = ob ? coordsOf(ob) : [];
         const holes = [...g.getElementsByTagNameNS('*', 'innerBoundaryIs')].map(coordsOf).filter(h => h.length > 2);
-        if (c.length > 2) out.push({ name, desc, type: 'Polygon', coords: c, holes });
+        if (c.length > 2) out.push({ name, desc, type: 'Polygon', coords: c, holes, style });
       }
     }
     if (!out.length) throw new Error('No se encontraron puntos, líneas ni polígonos');
     return out;
+  }
+  /* KML usa aabbggrr → CSS #rrggbb + opacidad */
+  function kmlColor(t) {
+    const m = /^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec((t || '').trim());
+    return m ? { c: `#${m[4]}${m[3]}${m[2]}`, a: Math.round(parseInt(m[1], 16) / 2.55) / 100 } : null;
+  }
+  function parseStyle(st) {
+    const sub = tag => [...st.getElementsByTagNameNS('*', tag)][0];
+    const ls = sub('LineStyle'), ps = sub('PolyStyle'), is = sub('IconStyle');
+    const o = {};
+    if (ls) { const c = kmlColor(childText(ls, 'color')); if (c) { o.line = c.c; o.lineA = c.a; } const w = +childText(ls, 'width'); if (w) o.width = Math.min(8, Math.max(1, w)); }
+    if (ps) { const c = kmlColor(childText(ps, 'color')); if (c) { o.fill = c.c; o.fillA = c.a; } if (childText(ps, 'fill') === '0') o.fillA = 0; if (childText(ps, 'outline') === '0') o.noOutline = true; }
+    if (is) { const c = kmlColor(childText(is, 'color')); if (c) o.icon = c.c; }
+    return Object.keys(o).length ? o : null;
   }
   async function peekZip(file) { const b = new Uint8Array(await file.slice(0, 2).arrayBuffer()); return b[0] === 0x50 && b[1] === 0x4b; }
   function childText(el, tag) { for (const c of el.children) if (c.localName === tag) return c.textContent.trim(); return ''; }
