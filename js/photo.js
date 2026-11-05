@@ -53,9 +53,16 @@ const Photo = (() => {
     const bandH = txt.length ? txt.length * lh + pad * 2 : 0;
     if (bandH) {
       const y0 = bandTop ? 0 : H - bandH;
-      g.fillStyle = 'rgba(0,0,0,0.62)'; g.fillRect(0, y0, W, bandH);
-      g.fillStyle = '#fff'; g.textBaseline = 'top'; g.textAlign = 'left';
-      txt.forEach((t, i) => g.fillText(t, fs, y0 + pad + i * lh));
+      const st = cfg.textStyle || 'outline';   // outline: sin fondo | dark: banda oscura | light: banda clara
+      if (st === 'dark') { g.fillStyle = 'rgba(0,0,0,0.62)'; g.fillRect(0, y0, W, bandH); }
+      if (st === 'light') { g.fillStyle = 'rgba(255,255,255,0.78)'; g.fillRect(0, y0, W, bandH); }
+      g.textBaseline = 'top'; g.textAlign = 'left'; g.lineJoin = 'round';
+      txt.forEach((t, i) => {
+        const y = y0 + pad + i * lh;
+        if (st === 'light') { g.fillStyle = '#111'; g.fillText(t, fs, y); return; }
+        if (st === 'outline') { g.lineWidth = Math.max(3, fs * 0.22); g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(t, fs, y); }
+        g.fillStyle = '#fff'; g.fillText(t, fs, y);
+      });
     }
     const pos = cfg.logoPos || 'tr';
     const logoTop = pos[0] === 't', logoLeft = pos[1] === 'l';

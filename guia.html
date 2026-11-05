@@ -17,7 +17,7 @@ code,kbd{background:#ece7da;border-radius:5px;padding:1px 5px;font-size:.92em}
 table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}
 th{color:var(--muted);font-weight:600}
 </style></head><body>
-<header><div><h1>Alba Field</h1><p>Registro de campo con y sin señal · guía de instalación y uso · versión 2.0.0</p></div></header>
+<header><div><h1>Alba Field</h1><p>Registro de campo con y sin señal · guía de instalación y uso · versión 2.1.0</p></div></header>
 <main>
 
 <section>
@@ -50,6 +50,26 @@ th{color:var(--muted);font-weight:600}
 <p>En la pestaña <b>Fotos</b> cada foto tiene un círculo ✓. Solo las marcadas se envían a Drive y entran al KMZ y a la galería Word. Las desmarcadas siguen en el teléfono y figuran en la matriz con <code>INCLUIDA_EN_PRODUCTOS = NO</code>. Botones <b>Todas</b> / <b>Ninguna</b> para el filtro actual.</p>
 </section>
 
+<section id="equipo">
+<h2>Trabajo en equipo: configuración central y consolidado</h2>
+<h3><span class="tag">1</span>El coordinador (una sola vez)</h3>
+<ol>
+<li>Instala o actualiza el receptor de Drive a la <b>versión 3</b> (ver «Configurar Google Drive» abajo).</li>
+<li>En su teléfono: Ajustes → Google Drive → pega URL, carpeta y clave → <b>Probar conexión</b>. Se crea sola la hoja <b>ALBA_FIELD_CONFIG</b> en la carpeta de Drive.</li>
+<li>Edita esa hoja (botón <b>Editar hoja de configuración</b>): pestañas PROYECTOS, EVALUADORES, COMPONENTES, CAMPANAS, ESTACIONES (planificadas, con coordenadas) y ROTULO. Logos: carpeta <code>CONFIG_LOGOS</code> con archivos <code>PROYECTO.png</code>.</li>
+<li>Toca <b>Compartir con el equipo (QR)</b> y lo envía o lo muestra a cada especialista.</li>
+</ol>
+<h3><span class="tag">2</span>Cada especialista</h3>
+<ol>
+<li>Instala Alba Field y abre el enlace (o escanea el QR con la cámara). Su app queda conectada y con las listas del proyecto.</li>
+<li>Al crear la jornada elige proyecto, componente y su código de las listas. Si escribe uno que no está en la configuración, la app le avisa.</li>
+<li>Las estaciones planificadas aparecen en el mapa y como sugerencia cuando está a menos de 60 m.</li>
+</ol>
+<h3><span class="tag">3</span>Consolidado automático</h3>
+<p>Cada envío actualiza la Google Sheet <code>PROYECTO/CAMPAÑA/CONSOLIDADO_PROYECTO_CAMPAÑA</code> con las pestañas <b>AVANCE</b>, JORNADAS, ESTACIONES, FOTOS (con enlace a cada foto en Drive) y AUDIOS de todo el equipo. Las correcciones reemplazan la fila, no la duplican. AVANCE compara estaciones planificadas con evaluadas por componente: % de avance, pendientes y estaciones fuera de plan.</p>
+<p class="warn">El enlace y el QR llevan la clave del receptor: compártalos solo con su equipo. Si la clave se filtra, cámbiela en el script, publique una nueva versión y comparta un nuevo QR.</p>
+</section>
+
 <section id="drive">
 <h2>Configurar Google Drive (una sola vez, 10 minutos)</h2>
 <p>La app envía a una carpeta suya mediante un pequeño «receptor» gratuito en su cuenta Google. No necesita tarjeta, Google Cloud ni permisos de TI.</p>
@@ -61,6 +81,7 @@ th{color:var(--muted);font-weight:600}
 <li><b>Implementar → Nueva implementación</b> → tipo <b>Aplicación web</b>. <i>Ejecutar como:</i> <b>Yo</b>. <i>Quién tiene acceso:</i> <b>Cualquier usuario</b>. → Implementar.</li>
 <li>Google pedirá autorizar el acceso a su Drive: <b>Revisar permisos</b> → su cuenta → «Configuración avanzada» → «Ir a Alba Field receptor» → <b>Permitir</b>. (Aparece «app no verificada» porque el script es suyo; es normal.)</li>
 <li>Copie la <b>URL de la aplicación web</b> (termina en <code>/exec</code>).</li>
+<li><b>Si ya tenía el receptor anterior:</b> reemplace todo el código por el nuevo (mantenga su CLAVE), luego <b>Implementar → Gestionar implementaciones → ✎ editar → Versión: Nueva versión → Implementar</b>. La URL /exec no cambia. Google pedirá autorizar de nuevo (ahora también Hojas de cálculo).</li>
 <li>En el teléfono: <b>Ajustes → Google Drive</b> → pegue la URL, el enlace de la carpeta y la clave → <b>Probar conexión</b>.</li>
 </ol>
 <p class="warn">Cualquier persona con la URL <b>y</b> la clave podría subir archivos a esa carpeta. Comparta ambas solo con su equipo. Para varios evaluadores, todos usan la misma URL, carpeta y clave: cada uno queda en su subcarpeta.</p>

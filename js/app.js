@@ -1,11 +1,11 @@
 /* Alba Field 2 · aplicación de campo offline (PWA): Jornada → Estación → Fotos + notas de voz. */
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const CODE_RE = /^[A-Za-z0-9_\-]{1,32}$/;
 const DEFAULT_COMPONENTS = ['Flora', 'Fauna terrestre', 'Ornitofauna', 'Mastofauna', 'Herpetofauna', 'Hidrobiología', 'Calidad de agua', 'Calidad de aire', 'Ruido', 'Suelo', 'Social', 'Arqueología'];
 const STAMP_FIELDS = [['proyecto', 'Proyecto · campaña · componente'], ['evaluador', 'Evaluador'], ['estacion', 'Estación y lugar'], ['leyenda', 'Leyenda de la foto'], ['fecha', 'Fecha y hora'], ['wgs', 'Coordenadas WGS84'], ['utm', 'Coordenadas UTM'], ['altitud', 'Altitud'], ['rumbo', 'Rumbo de cámara']];
-const DEFAULT_STAMP = { logoPos: 'tr', logoSize: 20, logoBg: true, bandPos: 'bottom', fields: Object.fromEntries(STAMP_FIELDS.map(([k]) => [k, true])) };
+const DEFAULT_STAMP = { logoPos: 'tr', logoSize: 20, logoBg: true, bandPos: 'bottom', textStyle: 'outline', fields: Object.fromEntries(STAMP_FIELDS.map(([k]) => [k, true])) };
 
 const S = {
   set: { north: true, maxAcc: 30, jpegQ: 0.9, drAuto: false, drCopy: false },
@@ -77,13 +77,15 @@ async function init() {
   S.set = { ...S.set, ...(await DB.kv('settings', {})) };
   S.allLayers = !!(await DB.kv('allLayers', false));
   await migrateV1();
+  await handleSetupLink();
   await loadAll();
   const aj = await DB.kv('activeJor');
   S.jor = aj ? S.d.jornadas.find(j => j.id === aj && !j.closed_at) || null : null;
   if (S.jor) { const as = await DB.kv('activeSt'); const st = as && S.d.stations.find(s => s.id === as && s.jornada_id === S.jor.id); if (st) openStation(st.id, true); else newStation(true); }
   bindTabs(); bindCampo(); bindFotos(); bindMap(); bindSend(); bindSettings();
   await reload();
-  netBadge(); addEventListener('online', () => { netBadge(); autoSync(); }); addEventListener('offline', netBadge);
+  netBadge(); addEventListener('online', () => { netBadge(); autoSync(); refreshTeamConfig(false); }); addEventListener('offline', netBadge);
+  setTimeout(() => refreshTeamConfig(false), 2500);
   startGps(); startCompass();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist().catch(() => {}); });
   setInterval(autoSync, 180000); setTimeout(autoSync, 5000);
@@ -143,14 +145,20 @@ function bindTabs() { $$('.tabs button').forEach(b => b.onclick = () => showView
 async function projCfg(P) { return { evaluators: [], components: [], campaigns: [], ...((P && await DB.kv('proj:' + P)) || {}) }; }
 async function stampCfg(P) { const c = (P && await DB.kv('stamp:' + P)) || {}; return { ...DEFAULT_STAMP, ...c, fields: { ...DEFAULT_STAMP.fields, ...(c.fields || {}) } }; }
 const opt = arr => [...new Set(arr)].filter(Boolean).sort((a, b) => String(a).localeCompare(String(b), 'es', { numeric: true })).map(v => `<option value="${esc(v)}">`).join('');
-async function knownProjects() { return [...new Set([...S.d.jornadas.map(j => j.project), ...((await DB.kv('projects', [])) || [])])]; }
+async function knownProjects() {
+  const tc = await DB.kv('team_cfg');
+  if (tc && tc.projects && tc.projects.length) return [...new Set([...tc.projects, ...(S.jor ? [S.jor.project] : [])])];
+  return [...new Set([...S.d.jornadas.map(j => j.project), ...((await DB.kv('projects', [])) || [])])];
+}
 async function fillJornadaLists() {
   const f = $('#formJornada'), P = up(f.elements.project.value);
   const c = await projCfg(P);
   $('#dlProject').innerHTML = opt(await knownProjects());
   $('#dlCampaign').innerHTML = opt([...c.campaigns, ...S.d.jornadas.filter(j => j.project === P).map(j => j.campaign)]);
   $('#dlComponent').innerHTML = opt([...(c.components.length ? c.components : DEFAULT_COMPONENTS), ...S.d.jornadas.filter(j => j.project === P).map(j => j.component)]);
-  const ev = [...c.evaluators, ...S.d.jornadas.filter(j => j.project === P || !P).map(j => ({ code: j.specialist, name: j.person }))];
+  let base = c.evaluators;
+  if (!P) for (const q of await knownProjects()) base = base.concat((await projCfg(q)).evaluators);   // sin proyecto aún: todos los del equipo
+  const ev = [...base, ...S.d.jornadas.filter(j => j.project === P || !P).map(j => ({ code: j.specialist, name: j.person }))];
   $('#dlEvalCode').innerHTML = opt(ev.map(e => e.code)); $('#dlEvalName').innerHTML = opt(ev.map(e => e.name));
   fillJornadaLists._ev = ev;
 }
@@ -208,6 +216,12 @@ function bindCampo() {
     await DB.setKv('lastJor', v);
     const projs = (await DB.kv('projects', [])) || []; if (!projs.includes(v.project)) await DB.setKv('projects', [...projs, v.project]);
     const same = S.d.jornadas.find(j => jorKey(j) === jorKey(v));
+    const tc = await DB.kv('team_cfg');
+    if (tc && tc.projects && tc.projects.length) {
+      if (!tc.projects.includes(v.project) && !(await ask(`<p>El proyecto <b>${esc(v.project)}</b> no está en la configuración del equipo.</p>`, [['Corregir', false], ['Continuar igual', true]]))) return;
+      const ev = (await projCfg(v.project)).evaluators;
+      if (ev.length && !ev.some(e => e.code === v.specialist) && !(await ask(`<p>El código <b>${esc(v.specialist)}</b> no figura entre los evaluadores de ${esc(v.project)}.</p>`, [['Corregir', false], ['Continuar igual', true]]))) return;
+    }
     if (S.jor && jorKey(S.jor) === jorKey(v)) { if (S.jor.person !== v.person) { S.jor.person = v.person; S.jor.edited_at = new Date().toISOString(); await DB.put('jornadas', S.jor); } return activateJornada(S.jor); }
     if (same) return activateJornada(same);
     if (S.jor && S.d.stations.some(s => s.jornada_id === S.jor.id)) {
@@ -237,7 +251,16 @@ function bindCampo() {
   };
   $('#btnSysCam').onclick = () => { reqCompassPermission(); pick($('#sysCam'), true); };
   $('#btnGal').onclick = () => pick($('#galIn'), false);
-  $('#sysCam').onchange = async e => { const file = e.target.files[0]; e.target.value = ''; if (file && await S.ensureP) await captureFromFile(file, 'sistema'); };
+  $('#sysCam').onchange = async e => {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file || !(await S.ensureP)) return;
+    const p = await captureFromFile(file, 'sistema');
+    if (!p) return;
+    // la cámara del teléfono devuelve una foto por vez: se ofrece seguir sin salir de la estación
+    const n = photosOf(S.st.id).filter(x => !x.voided).length;
+    const again = await ask(`<h3>Foto ${p.n} guardada ✓</h3><p>Estación <b>${esc(S.st.station)}</b> · ${n} fotos.</p>`, [['Terminar', false], ['📷 Tomar otra foto', true]]);
+    if (again) $('#sysCam').click();
+  };
   $('#galIn').onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (!fs.length || !(await S.ensureP)) return; for (const [i, f] of fs.entries()) { busy(true, `Importando ${i + 1}/${fs.length}…`); await captureFromFile(f, 'galeria', true); } busy(false); reload(); };
   $('#camClose').onclick = closeCamera;
   $('#camShoot').onclick = shootInApp;
@@ -506,10 +529,27 @@ function camHud() {
 }
 async function grabFrame() {
   const track = S.stream.getVideoTracks()[0];
-  if ('ImageCapture' in window) { try { const b = await new ImageCapture(track).takePhoto(); if (b && b.size) return b; } catch (e) { console.warn('takePhoto', e); } }
+  // takePhoto da mejor resolución, pero en algunos Android congela la cámara: se limita a 5 s y se verifica la pista
+  if ('ImageCapture' in window && !S.noTakePhoto) {
+    try {
+      const b = await Promise.race([new ImageCapture(track).takePhoto(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))]);
+      if (b && b.size) return b;
+    } catch (e) { console.warn('takePhoto', e); S.noTakePhoto = true; }
+  }
   const v = $('#video'), c = document.createElement('canvas');
   c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0);
   return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('No se capturó imagen')), 'image/jpeg', 0.95));
+}
+/* Mantiene la cámara viva entre disparos: si la pista terminó o el video se congeló, se reabre. */
+async function keepCameraAlive() {
+  if (!S.stream || $('#camera').hidden) return;
+  const t = S.stream.getVideoTracks()[0], v = $('#video');
+  if (t && t.readyState === 'live' && !t.muted && !v.paused) return;
+  try {
+    S.stream.getTracks().forEach(x => x.stop());
+    S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } } });
+    v.srcObject = S.stream; await v.play().catch(() => {});
+  } catch (e) { toast('La cámara se cerró: toque Listo y vuelva a abrirla'); }
 }
 async function shootInApp() {
   if (S.busy || !S.stream) return;
@@ -522,9 +562,9 @@ async function shootInApp() {
     if (!(await acceptAccuracy(fx))) return;
     const p = await savePhoto(blob, { shotAt, fx, heading, mode: 'app', caption: $('#camCaption').value.trim() });
     $('#camCaption').value = '';
-    toast(`Foto ${p.n} guardada ✓ · ${p.station}`);
+    toast(`Foto ${p.n} guardada ✓ · puede tomar otra`, 2000);
   } catch (e) { toast('Error: ' + e.message, 6000); }
-  finally { S.busy = false; btn.disabled = false; camHud(); }
+  finally { S.busy = false; btn.disabled = false; await keepCameraAlive(); camHud(); }
 }
 /* Foto desde la cámara del sistema o desde la galería del teléfono. En galería se usa el GPS y la fecha EXIF si existen. */
 async function captureFromFile(file, mode, multi) {
@@ -548,7 +588,8 @@ async function captureFromFile(file, mode, multi) {
       if (file.lastModified && shotAt - file.lastModified > 10 * 60000) qa.push('Archivo podría no ser recién tomado');
     }
     const p = await savePhoto(file, { shotAt, fx, heading: null, mode, qa });
-    if (!multi) toast(`Foto ${p.n} guardada ✓ · ${p.station}`);
+    if (!multi && mode !== 'sistema') toast(`Foto ${p.n} guardada ✓ · ${p.station}`);
+    return p;
   } catch (e) { toast('Error: ' + e.message, 6000); }
   finally { if (!multi) { busy(false); reload(); } }
 }
@@ -641,7 +682,7 @@ async function photoDialog(id) {
   const b = await DB.get('blobs', id); const url = b ? URL.createObjectURL(b.stamped) : '';
   const rows = [['Archivo', p.photo_name + '.jpg'], ['Estación', p.station], ['Fecha', p.time_local.replace('T', ' ').slice(0, 19)], ['UTM', p.utm_zone ? `${p.utm_zone} ${Math.round(p.utm_e)} E / ${Math.round(p.utm_n)} N` : ''], ['Precisión', p.accuracy != null ? `±${p.accuracy.toFixed(1)} m` : 'EXIF'], ['Rumbo', p.heading != null ? Math.round(p.heading) + '° mag.' : ''], ['QA/QC', (p.qa || []).join('; ') || 'OK'], ['Estado', p.voided ? 'ANULADA' : p.uploaded_at && !needsUpload(p) ? 'en Drive ☁️' : 'en teléfono']].filter(x => x[1]);
   const v = await ask(`<img src="${url}" alt=""><label>Leyenda<textarea id="pdCap" rows="2" placeholder="Qué muestra la foto">${esc(p.caption)}</textarea></label><label class="check"><input type="checkbox" id="pdSend" ${p.send !== false ? 'checked' : ''}> Enviar a Drive e incluir en productos</label><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`,
-    [['Compartir', 'share'], [p.voided ? 'Reactivar' : 'Anular', 'void'], ['Cerrar', 'close'], ['Guardar', true]]);
+    [['🗑 Eliminar', 'del', 'danger'], ['Compartir', 'share'], [p.voided ? 'Reactivar' : 'Anular', 'void'], ['Cerrar', 'close'], ['Guardar', true]]);
   const cap = (document.getElementById('pdCap') || {}).value || '', send = (document.getElementById('pdSend') || {}).checked;
   URL.revokeObjectURL(url);
   if (v === true) {
@@ -653,11 +694,31 @@ async function photoDialog(id) {
     toast('Foto actualizada ✓');
   }
   if (v === 'share' && b) await shareOrDownload(b.stamped, p.photo_name + '.jpg', `${p.station} foto ${p.n}`);
+  if (v === 'del') await deletePhoto(p);
   if (v === 'void') {
     const ok = await ask(`<h3>${p.voided ? 'Reactivar' : 'Anular'} foto</h3><p>${p.voided ? 'Volverá a contarse en los productos.' : 'La foto NO se borra: queda marcada como ANULADA en la matriz y sale del KMZ y la galería.'}</p>`, [['Cancelar', false], ['Confirmar', true]]);
     if (ok) { p.voided = !p.voided; p.edited_at = new Date().toISOString(); await DB.put('photos', p); }
   }
   await reload();
+}
+
+/* Borrado definitivo con doble confirmación. Si ya estaba en Drive, la copia de Drive no se toca. */
+async function deletePhoto(p, quiet) {
+  const b = await DB.get('blobs', p.id); const url = b && b.thumb ? URL.createObjectURL(b.thumb) : '';
+  const ok = await ask(`<h3>¿Eliminar esta foto?</h3><img src="${url}" alt="" style="max-height:38vh;object-fit:contain"><p><b>${esc(p.station)} · foto ${p.n}</b>${p.caption ? ' · ' + esc(p.caption) : ''}</p><p>Se borra del teléfono (rotulada y original) y <b>no se puede recuperar</b>.</p>${p.uploaded_at ? '<p class="hint">Ya fue enviada a Drive: la copia en Drive se queda; bórrela allí si no la necesita.</p>' : ''}<label class="check"><input type="checkbox" id="delOk"> Sí, quiero eliminarla</label>`,
+    [['Cancelar', false], ['Eliminar', true, 'danger']]);
+  const sure = (document.getElementById('delOk') || {}).checked;
+  if (url) URL.revokeObjectURL(url);
+  if (!ok) return false;
+  if (!sure) { toast('Marque "Sí, quiero eliminarla" para confirmar'); return false; }
+  await DB.del('photos', p.id); await DB.del('blobs', p.id);
+  S.d.photos = S.d.photos.filter(x => x.id !== p.id);
+  thumbUrls.delete(p.id);
+  const st = S.d.stations.find(x => x.id === p.station_id);
+  if (st) { st.edited_at = new Date().toISOString(); const { _stampedAs, ...c } = st; await DB.put('stations', c); }
+  if (!quiet) toast('Foto eliminada');
+  await reload();
+  return true;
 }
 
 /* ---------------- FOTOS: galería con selección ---------------- */
@@ -860,7 +921,13 @@ async function singleProduct(kind) {
 }
 
 /* ---------------- Google Drive ---------------- */
+async function renderConsLinks() {
+  const urls = (await DB.kv('cons_urls', {})) || {};
+  const ks = Object.keys(urls).sort();
+  $('#consLinks').innerHTML = ks.length ? '<b>Consolidados del equipo (Google Sheets)</b>' + ks.map(k => `<a class="linkrow" href="${esc(urls[k])}" target="_blank" rel="noopener">📊 ${esc(k)}</a>`).join('') : '';
+}
 async function renderDriveState() {
+  renderConsLinks();
   const c = await Drive.cfg();
   $('#drAuto').checked = !!S.set.drAuto; $('#drCopy').checked = !!S.set.drCopy;
   const n = S.d.photos.filter(needsUpload).length, na = S.d.audios.filter(needsUpload).length;
@@ -890,9 +957,9 @@ async function syncDrive(manual) {
       try {
         const b = await DB.get('blobs', x.id);
         if (k === 'p') {
-          await Drive.upload([...jorPath(j), 'FOTOS'], x.photo_name + '.jpg', b.stamped);
+          const r = await Drive.upload([...jorPath(j), 'FOTOS'], x.photo_name + '.jpg', b.stamped); x.drive_id = r.id;
           if (c.orig && b.original) await Drive.upload([...jorPath(j), 'FOTOS', 'ORIGINALES'], x.photo_name + '_original.jpg', b.original);
-        } else await Drive.upload([...jorPath(j), 'AUDIOS'], x.file_name, b.audio);
+        } else { const r = await Drive.upload([...jorPath(j), 'AUDIOS'], x.file_name, b.audio); x.drive_id = r.id; }
         x.uploaded_at = new Date().toISOString(); x.sync_error = null;
         await DB.put(k === 'p' ? 'photos' : 'audios', x); touched.add(j.id); ok++;
       } catch (e) { x.sync_error = e.message; fail++; drLog(`✗ ${k === 'p' ? x.photo_name : x.file_name}: ${e.message}`); if (/Clave|configurado|publicado|exec|getFolderById|No item|acceso|conexión|agotado/i.test(e.message)) { stop = true; break; } }
@@ -901,6 +968,12 @@ async function syncDrive(manual) {
       try {
         const prods = await productsOf(j, t => step(`${j.date} · ${t}`));
         for (const [n, blob] of prods) { step(`Subiendo ${n}…`); await Drive.upload([...jorPath(j), 'PRODUCTOS'], n, blob); ok++; }
+        step(`Consolidando ${j.project}/${j.campaign} en Google Sheets…`);
+        try {
+          const r = await Drive.consolidate(j.project, j.campaign, Exports.tables(dataOfJor(j)));
+          const urls = (await DB.kv('cons_urls', {})) || {}; urls[`${j.project}/${j.campaign}`] = r.url; await DB.setKv('cons_urls', urls);
+          drLog(`✓ Consolidado ${j.project}/${j.campaign}: ${r.nuevos} nuevos, ${r.actualizados} actualizados`);
+        } catch (e) { drLog(`⚠ Consolidado ${j.project}/${j.campaign}: ${e.message}`); }
         j.products_at = new Date().toISOString(); await DB.put('jornadas', j); touched.add(j.id);
         drLog(`✓ Productos de ${j.date} actualizados`);
       } catch (e) { fail++; drLog(`✗ Productos ${j.date}: ${e.message}`); }
@@ -969,6 +1042,91 @@ async function restore(file) {
   finally { busy(false); reload(); }
 }
 
+
+/* ---------------- configuración central del equipo ---------------- */
+/* Enlace #cfg=… (código QR del coordinador): configura Drive y descarga la configuración del equipo. */
+async function handleSetupLink() {
+  const c = Drive.parseSetup(location.hash);
+  if (!c) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  const prev = await Drive.cfg();
+  if (prev.url && (prev.url !== c.url || prev.folder !== c.folder) && !(await ask('<h3>Cambiar carpeta del equipo</h3><p>Este teléfono ya enviaba a otra carpeta de Drive. ¿Usar la nueva configuración?</p>', [['No', false], ['Sí, usar la nueva', true]]))) return;
+  await DB.setKv('drive_cfg', { ...prev, ...c });
+  toast('Enlace del equipo recibido ✓ · descargando configuración…', 5000);
+  setTimeout(() => refreshTeamConfig(true), 600);
+}
+async function refreshTeamConfig(manual) {
+  const c = await Drive.cfg();
+  if (!Drive.ready(c)) { if (manual) toast('Primero configure Google Drive (o abra el enlace del equipo)'); return; }
+  if (!navigator.onLine) { if (manual) toast('Sin señal: se usará la configuración guardada'); return; }
+  const tc = await DB.kv('team_cfg');
+  if (!manual && tc && Date.now() - ts(tc.at) < 6 * 3600 * 1000) return;
+  if (refreshTeamConfig._busy) return; refreshTeamConfig._busy = true;
+  if (manual) busy(true, 'Descargando configuración del equipo…');
+  try {
+    const r = await Drive.teamConfig();
+    const n = await applyTeamConfig(r);
+    if (manual) toast(`Configuración actualizada ✓ · ${n.projects} proyectos, ${n.evaluators} evaluadores, ${n.stations} estaciones planificadas`, 6000);
+  } catch (e) { if (manual) toast('Configuración: ' + e.message, 7000); }
+  finally { refreshTeamConfig._busy = false; if (manual) busy(false); renderTeamState(); if (manual) { await reload(); loadProjectSettings(); } }
+}
+const cell = v => String(v ?? '').trim();
+const yes = v => !/^(no|n|false|0)$/i.test(cell(v));
+async function applyTeamConfig(r) {
+  const C = r.config || {};
+  const projects = (C.PROYECTOS || []).filter(p => cell(p.PROYECTO) && yes(p.ACTIVO ?? 'SI')).map(p => up(p.PROYECTO));
+  const evals = (C.EVALUADORES || []).filter(e => cell(e.CODIGO)).map(e => ({ code: up(e.CODIGO), name: cell(e.NOMBRE), specialty: cell(e.ESPECIALIDAD), projects: cell(e.PROYECTOS || '*').split(',').map(x => up(x)).filter(Boolean) }));
+  let nst = 0;
+  const names = {};
+  for (const p of C.PROYECTOS || []) if (cell(p.PROYECTO)) names[up(p.PROYECTO)] = { name: cell(p.NOMBRE), client: cell(p.CLIENTE) };
+  for (const P of projects) {
+    const prev = await projCfg(P);
+    const components = (C.COMPONENTES || []).filter(c => up(c.PROYECTO) === P).map(c => cell(c.COMPONENTE)).filter(Boolean);
+    const campaigns = (C.CAMPANAS || []).filter(c => up(c.PROYECTO) === P).map(c => up(c.CAMPANA)).filter(Boolean);
+    const evaluators = evals.filter(e => e.projects.includes('*') || e.projects.includes(P)).map(e => ({ code: e.code, name: e.name, specialty: e.specialty }));
+    await DB.setKv('proj:' + P, { ...prev, components: components.length ? components : prev.components, campaigns: campaigns.length ? campaigns : prev.campaigns, evaluators: evaluators.length ? evaluators : prev.evaluators, ...(names[P] || {}), central: true });
+    const ro = (C.ROTULO || []).find(x => up(x.PROYECTO) === P);
+    if (ro) {
+      const sc = await stampCfg(P);
+      const pos = cell(ro.LOGO_POSICION).toLowerCase(), size = +ro.LOGO_TAMANO, bg = cell(ro.FONDO_TEXTO).toLowerCase(), band = cell(ro.POSICION_DATOS).toLowerCase();
+      await DB.setKv('stamp:' + P, { ...sc, ...(/^(tl|tr|bl|br)$/.test(pos) ? { logoPos: pos } : {}), ...(size >= 5 && size <= 45 ? { logoSize: size } : {}), ...(/^(outline|dark|light)$/.test(bg) ? { textStyle: bg } : {}), ...(/^(top|bottom)$/.test(band) ? { bandPos: band } : {}) });
+    }
+    const lg = (r.logos || {})[P];
+    if (lg) { const bin = atob(lg.data), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); await DB.setKv('logo:' + P, new Blob([a], { type: lg.mime || 'image/png' })); }
+    // estaciones planificadas → capa del mapa (sugerencias, avance y QA/QC de distancia)
+    const feats = (C.ESTACIONES || []).filter(e => up(e.PROYECTO) === P && cell(e.ESTACION) && isFinite(+e.LATITUD) && isFinite(+e.LONGITUD) && +e.LATITUD && +e.LONGITUD)
+      .map(e => ({ name: up(e.ESTACION), desc: [cell(e.COMPONENTE), cell(e.DESCRIPCION)].filter(Boolean).join(' · '), type: 'Point', coords: [[+e.LATITUD, +e.LONGITUD]], component: cell(e.COMPONENTE) }));
+    const key = `${P}::Estaciones planificadas (equipo)`;
+    if (feats.length) { const old = await DB.get('layers', key); await DB.put('layers', { key, project: P, name: 'Estaciones planificadas (equipo)', features: feats, visible: old ? old.visible : true, central: true, imported_at: new Date().toISOString() }); }
+    else await DB.del('layers', key);
+    nst += feats.length;
+  }
+  const known = (await DB.kv('projects', [])) || [];
+  await DB.setKv('projects', [...new Set([...known, ...projects])]);
+  await DB.setKv('team_cfg', { at: new Date().toISOString(), projects, sheetUrl: r.sheetUrl, evaluators: evals.length, stations: nst });
+  return { projects: projects.length, evaluators: evals.length, stations: nst };
+}
+async function renderTeamState() {
+  const tc = await DB.kv('team_cfg'), c = await Drive.cfg();
+  const el = $('#teamState'); if (!el) return;
+  el.innerHTML = !Drive.ready(c) ? 'Sin configurar. Abra el enlace o QR que le compartió el coordinador, o complete Google Drive más abajo.'
+    : tc ? `Actualizada ${new Date(tc.at).toLocaleString()} · ${tc.projects.length} proyectos (${tc.projects.map(esc).join(', ')}) · ${tc.evaluators} evaluadores · ${tc.stations} estaciones planificadas`
+    : 'Drive configurado. Toque "Actualizar configuración" para descargarla.';
+  $('#btnTeamSheet').hidden = !(tc && tc.sheetUrl);
+  if (tc && tc.sheetUrl) $('#btnTeamSheet').href = tc.sheetUrl;
+}
+async function shareTeamLink() {
+  const c = await Drive.cfg();
+  if (!Drive.ready(c)) { toast('Configure y pruebe Google Drive primero'); return; }
+  const link = Drive.setupLink(c, location.origin + location.pathname);
+  let svg = '';
+  try { const q = qrcode(0, 'M'); q.addData(link); q.make(); svg = q.createSvgTag({ cellSize: 5, margin: 2, scalable: true }); } catch (e) { svg = '<p class="hint">No se pudo generar el QR; use el enlace.</p>'; }
+  const v = await ask(`<h3>Configurar el equipo</h3><p>Cada especialista escanea este código con la cámara del celular (o abre el enlace) y su app queda conectada a la carpeta de Drive y a la configuración central.</p><div class="qr">${svg}</div><p class="warn">Incluye la clave del receptor: compártalo solo con su equipo.</p>`,
+    [['Cerrar', false], ['Copiar enlace', 'copy'], ['Compartir', 'share', 'primary']]);
+  if (v === 'copy') { try { await navigator.clipboard.writeText(link); toast('Enlace copiado ✓'); } catch (_) { prompt('Copie el enlace:', link); } }
+  if (v === 'share') { try { await navigator.share({ title: 'Alba Field · configuración del equipo', text: 'Abra este enlace en su celular para configurar Alba Field:', url: link }); } catch (e) { if (e.name !== 'AbortError') { try { await navigator.clipboard.writeText(link); toast('Enlace copiado ✓'); } catch (_) {} } } }
+}
+
 /* ---------------- ajustes ---------------- */
 const cfgP = () => up($('#cfgProject').value) || (S.jor ? S.jor.project : '');
 async function loadProjectSettings() {
@@ -979,7 +1137,7 @@ async function loadProjectSettings() {
   $('#catEval').value = c.evaluators.map(e => `${e.code} | ${e.name}`).join('\n');
   $('#catComp').value = (c.components.length ? c.components : DEFAULT_COMPONENTS).join('\n');
   $('#catCamp').value = c.campaigns.join('\n');
-  $('#sLogoPos').value = sc.logoPos; $('#sLogoBg').value = sc.logoBg ? '1' : '0'; $('#sLogoSize').value = sc.logoSize; $('#sLogoSizeV').textContent = sc.logoSize; $('#sBandPos').value = sc.bandPos;
+  $('#sLogoPos').value = sc.logoPos; $('#sLogoBg').value = sc.logoBg ? '1' : '0'; $('#sLogoSize').value = sc.logoSize; $('#sLogoSizeV').textContent = sc.logoSize; $('#sBandPos').value = sc.bandPos; $('#sTextStyle').value = sc.textStyle || 'outline';
   $('#sFields').innerHTML = STAMP_FIELDS.map(([k, l]) => `<label class="check"><input type="checkbox" data-f="${k}" ${sc.fields[k] ? 'checked' : ''}> ${l}</label>`).join('');
   $('#sFields').querySelectorAll('input').forEach(i => i.onchange = drawPreview);
   $('#logoDel').hidden = !(P && await DB.kv('logo:' + P));
@@ -987,7 +1145,7 @@ async function loadProjectSettings() {
 }
 function readStampForm() {
   const fields = {}; $('#sFields').querySelectorAll('input').forEach(i => fields[i.dataset.f] = i.checked);
-  return { logoPos: $('#sLogoPos').value, logoBg: $('#sLogoBg').value === '1', logoSize: +$('#sLogoSize').value, bandPos: $('#sBandPos').value, fields: { ...DEFAULT_STAMP.fields, ...fields } };
+  return { logoPos: $('#sLogoPos').value, logoBg: $('#sLogoBg').value === '1', logoSize: +$('#sLogoSize').value, bandPos: $('#sBandPos').value, textStyle: $('#sTextStyle').value, fields: { ...DEFAULT_STAMP.fields, ...fields } };
 }
 async function drawPreview() {
   const c = $('#stampPrev'), g = c.getContext('2d'), W = c.width, H = c.height;
@@ -1002,8 +1160,11 @@ async function drawPreview() {
   Photo.drawOverlay(g, W, H, sp, { lines: stampLines(sp, cfg), cfg, north: S.set.north && cfg.fields.rumbo, logoImg });
 }
 function bindSettings() {
+  $('#btnTeamRefresh').onclick = () => refreshTeamConfig(true);
+  $('#btnTeamShare').onclick = shareTeamLink;
+  renderTeamState();
   $('#cfgProject').addEventListener('change', e => { e.target.value = up(e.target.value); loadProjectSettings(); });
-  ['#sLogoPos', '#sLogoBg', '#sBandPos'].forEach(id => $(id).onchange = drawPreview);
+  ['#sLogoPos', '#sLogoBg', '#sBandPos', '#sTextStyle'].forEach(id => $(id).onchange = drawPreview);
   $('#sLogoSize').oninput = e => { $('#sLogoSizeV').textContent = e.target.value; drawPreview(); };
   $('#btnStamp').onclick = async () => { const P = cfgP(); if (!P) { toast('Escriba el proyecto a configurar'); return; } await DB.setKv('stamp:' + P, readStampForm()); toast(`Rótulo guardado para ${P} ✓`); };
   $('#btnCats').onclick = async () => {
@@ -1040,7 +1201,11 @@ function bindSettings() {
     const c = readDrive(); await DB.setKv('drive_cfg', { ...(await Drive.cfg()), ...c });
     if (!navigator.onLine) { toast('Sin señal'); return; }
     busy(true, 'Probando conexión…');
-    try { const r = await Drive.ping(); await DB.setKv('drive_cfg', { ...(await Drive.cfg()), rootName: r.root }); busy(false); toast(`Conexión correcta ✓ · carpeta "${r.root}"`, 5000); renderDriveState(); }
+    try {
+      const r = await Drive.ping(); await DB.setKv('drive_cfg', { ...(await Drive.cfg()), rootName: r.root }); busy(false);
+      if ((r.version || 2) < 3) { toast(`Conexión correcta, pero el receptor es antiguo: actualice el código del script (versión 3) para configuración y consolidado`, 9000); renderDriveState(); return; }
+      toast(`Conexión correcta ✓ · carpeta "${r.root}"`, 4000); renderDriveState(); refreshTeamConfig(true);
+    }
     catch (e) { busy(false); toast('Drive: ' + e.message, 7000); }
   };
   $('#btnPersist').onclick = async () => { if (navigator.storage && navigator.storage.persist) { const ok = await navigator.storage.persist(); toast(ok ? 'Datos protegidos ✓' : 'El navegador no lo concedió. Instale la app en la pantalla de inicio.', 6000); renderStorage(); } };

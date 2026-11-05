@@ -68,7 +68,7 @@ const Exports = (() => {
       ['LATITUD', p => num(p.lat), 12], ['LONGITUD', p => num(p.lon), 12], ['ALTITUD_M', p => num(r1(p.alt)), 10], ['PRECISION_M', p => num(r1(p.accuracy)), 10],
       ['UTM_ZONA', p => p.utm_zone, 8], ['UTM_ESTE', p => num(p.utm_e), 12], ['UTM_NORTE', p => num(p.utm_n), 13],
       ['RUMBO_MAG_APROX', p => num(p.heading != null ? Math.round(p.heading) : null), 10],
-      ['ARCHIVO', p => p.photo_name + '.jpg', 40], ['ARCHIVO_ORIGINAL', p => p.photo_name + '_original.jpg', 40], ['SHA256_ORIGINAL', p => p.sha256_original, 20],
+      ['ARCHIVO', p => p.photo_name + '.jpg', 40], ['ARCHIVO_ORIGINAL', p => p.photo_name + '_original.jpg', 40], ['ENLACE_DRIVE', p => p.drive_id ? 'https://drive.google.com/file/d/' + p.drive_id + '/view' : '', 30], ['SHA256_ORIGINAL', p => p.sha256_original, 20],
       ['MODO', p => p.camera_mode, 9], ['INCLUIDA_EN_PRODUCTOS', p => p.send === false || p.voided ? 'NO' : 'SI', 12],
       ['QAQC', qaTxt, 30], ['ANULADA', p => p.voided ? 'SI' : 'NO', 8], ['ESTADO', statusTxt, 14], ['VERSION_APP', p => p.app_version, 9],
     ],
@@ -76,7 +76,7 @@ const Exports = (() => {
       ['ID_AUDIO', a => a.id, 38], ['ID_ESTACION', a => a.station_id, 38], ['PROYECTO', a => a.project, 12], ['CAMPANA', a => a.campaign, 12],
       ['EVALUADOR_COD', a => a.specialist, 12], ['ESTACION', a => a.station, 14], ['N_AUDIO', a => a.n, 8],
       ['FECHA', a => (a.time_local || '').slice(0, 10), 11], ['HORA', a => hhmm(a.time_local), 9], ['DURACION_S', a => num(a.duration_s), 10],
-      ['ARCHIVO', a => a.file_name, 40], ['FORMATO', a => a.mime, 18], ['ANULADO', a => a.voided ? 'SI' : 'NO', 8], ['ESTADO', statusTxt, 14],
+      ['ARCHIVO', a => a.file_name, 40], ['ENLACE_DRIVE', a => a.drive_id ? 'https://drive.google.com/file/d/' + a.drive_id + '/view' : '', 30], ['FORMATO', a => a.mime, 18], ['ANULADO', a => a.voided ? 'SI' : 'NO', 8], ['ESTADO', statusTxt, 14],
     ],
   };
   const rowsOf = (cols, list, x) => [cols.map(c => c[0]), ...list.map(o => cols.map(c => { try { const v = c[1](o, x); return v ?? ''; } catch (_) { return ''; } }))];
@@ -309,5 +309,11 @@ Rumbo: magnético aproximado según el sensor del teléfono; no reemplaza un azi
     return { blob: await out.generateAsync({ type: 'blob', compression: 'DEFLATE' }), name: `AlbaField_GENERAL_${stampNow()}.zip`, stations: d.stations.length, photos: d.photos.length, esps, conflicts: conflicts.length };
   }
 
-  return { xlsx, matrix, kmz, gallery, pack, consolidate, migrateV1, stampNow };
+  /* Tablas planas (encabezado + filas) para la consolidación en Google Sheets */
+  function tables(d) {
+    const x = norm(d);
+    return { JORNADAS: rowsOf(C.JORNADAS, x.jo, x), ESTACIONES: rowsOf(C.ESTACIONES, x.st, x), FOTOS: rowsOf(C.FOTOS, x.ph, x), AUDIOS: rowsOf(C.AUDIOS, x.au, x) };
+  }
+
+  return { xlsx, matrix, tables, kmz, gallery, pack, consolidate, migrateV1, stampNow };
 })();

@@ -150,3 +150,13 @@ button.recOn{background:var(--bad);border-color:var(--bad);color:#fff}
 .stRow.cur{border-color:var(--accent);box-shadow:0 0 0 2px rgba(45,106,79,.2)}
 .stRow.void{opacity:.5}
 dialog textarea,dialog input{margin-bottom:8px}
+
+button.danger{border-color:var(--bad);color:var(--bad);background:#fff}
+dialog menu button{flex:1 1 auto}
+
+.qr{display:flex;justify-content:center;margin:8px 0}.qr svg{width:min(260px,70vw);height:auto;background:#fff;border-radius:8px}
+p.warn{color:var(--warn);font-size:13px}
+.consLinks{display:flex;flex-direction:column;gap:6px;margin-top:10px;font-size:14px}
+a.linkrow{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--accent);text-decoration:none;font-weight:600}
+.team{border-color:var(--accent)}
+a.filebtn{text-decoration:none}

@@ -76,14 +76,14 @@
       <div class="block">
         <div class="blockHead"><b>📷 Fotografías</b><small id="phCount">0</small></div>
         <div class="row3">
-          <button type="button" class="primary" id="btnCam">📷 Cámara</button>
+          <button type="button" class="primary" id="btnCam">📷 Varias fotos</button>
           <button type="button" class="ghost" id="btnSysCam">Cámara del teléfono</button>
           <button type="button" class="ghost" id="btnGal">Galería</button>
         </div>
         <input type="file" id="sysCam" accept="image/*" capture="environment" hidden>
         <input type="file" id="galIn" accept="image/*" multiple hidden>
         <div id="stPhotos" class="phGrid"></div>
-        <p class="hint">Toque una foto para escribir su leyenda. La leyenda aparece en la galería Word.</p>
+        <p class="hint"><b>Varias fotos</b>: la cámara queda abierta, dispare las veces que necesite y toque <b>Listo</b>. Toque una foto para su leyenda o para eliminarla.</p>
       </div>
 
       <div class="actions">
@@ -152,6 +152,7 @@
     <label class="check"><input type="checkbox" id="drAuto"> Enviar solo cuando haya señal (con la app abierta)</label>
     <label class="check"><input type="checkbox" id="drCopy"> Guardar también una copia ZIP en el teléfono al enviar</label>
     <div id="drLog" class="log"></div>
+    <div id="consLinks" class="consLinks"></div>
   </div>
 
   <div class="card">
@@ -195,6 +196,17 @@
 <!-- ============ AJUSTES ============ -->
 <section id="view-ajustes" class="view">
   <h2>Ajustes</h2>
+  <div class="card team">
+    <h3>Configuración del equipo</h3>
+    <p class="hint" id="teamState">…</p>
+    <div class="actions">
+      <button class="primary" id="btnTeamRefresh">⟳ Actualizar configuración</button>
+      <button class="ghost" id="btnTeamShare">📲 Compartir con el equipo (QR)</button>
+      <a class="filebtn" id="btnTeamSheet" target="_blank" rel="noopener" hidden>📝 Editar hoja de configuración</a>
+    </div>
+    <p class="hint">El coordinador edita la hoja <b>ALBA_FIELD_CONFIG</b> en Drive (proyectos, evaluadores, componentes, campañas, estaciones planificadas, rótulo y logos). Los teléfonos la descargan solos cada 6 horas con señal.</p>
+  </div>
+
   <div class="card">
     <h3>Proyecto a configurar</h3>
     <input id="cfgProject" pattern="[A-Za-z0-9_\-]{1,32}" list="dlProject" placeholder="ej. MEIA-ILO" autocapitalize="characters">
@@ -206,6 +218,7 @@
     <label>Evaluadores (uno por línea: <code>CÓDIGO | Nombre</code>)<textarea id="catEval" rows="4" placeholder="ESP01 | Juan Pérez&#10;ESP02 | María López"></textarea></label>
     <label>Componentes / especialidades (uno por línea)<textarea id="catComp" rows="4"></textarea></label>
     <label>Campañas (una por línea)<textarea id="catCamp" rows="2" placeholder="C01&#10;C02"></textarea></label>
+    <p class="hint">Si el proyecto está en la configuración del equipo, estas listas se reemplazan al actualizarla.</p>
     <button class="primary" id="btnCats">Guardar catálogos</button>
   </div>
 
@@ -218,7 +231,10 @@
       <label>Fondo del logo<select id="sLogoBg"><option value="1">Blanco</option><option value="0">Sin fondo</option></select></label>
     </div>
     <label>Tamaño del logo: <b id="sLogoSizeV">20</b> % del ancho<input type="range" id="sLogoSize" min="8" max="40" value="20"></label>
-    <label>Banda de datos<select id="sBandPos"><option value="bottom">Abajo</option><option value="top">Arriba</option></select></label>
+    <div class="row2">
+      <label>Datos de la foto<select id="sBandPos"><option value="bottom">Abajo</option><option value="top">Arriba</option></select></label>
+      <label>Fondo del texto<select id="sTextStyle"><option value="outline">Sin fondo</option><option value="dark">Banda oscura</option><option value="light">Banda clara</option></select></label>
+    </div>
     <p class="hint">Campos visibles en la banda:</p>
     <div class="checks" id="sFields"></div>
     <canvas id="stampPrev" class="stampPrev" width="800" height="600"></canvas>
@@ -290,6 +306,7 @@
 <script src="vendor/leaflet.js"></script>
 <script src="vendor/jszip.min.js"></script>
 <script src="vendor/piexif.js"></script>
+<script src="vendor/qrcode.js"></script>
 <script src="js/db.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/photo.js"></script>

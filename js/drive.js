@@ -33,5 +33,16 @@ const Drive = (() => {
     const data = (await Photo.readDataURL(blob)).split(',')[1] || '';
     return call({ action: 'upload', path, name, mime: blob.type || 'application/octet-stream', data });
   }
-  return { cfg, ready, folderId, ping, upload };
+  /* Configuración central del equipo (hoja ALBA_FIELD_CONFIG) y consolidación por proyecto/campaña */
+  async function teamConfig() { return call({ action: 'config' }, 60000); }
+  async function consolidate(project, campaign, tables) { return call({ action: 'consolidate', project, campaign, tables }, 120000); }
+  /* Enlace de instalación del equipo: lleva URL del receptor, carpeta y clave */
+  const b64u = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unb64u = s => decodeURIComponent(escape(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+  function setupLink(c, base) { return `${base}#cfg=${b64u(JSON.stringify({ u: c.url, f: c.folder, k: c.token }))}`; }
+  function parseSetup(hash) {
+    const m = /[#&]cfg=([A-Za-z0-9_-]+)/.exec(hash || ''); if (!m) return null;
+    try { const o = JSON.parse(unb64u(m[1])); return o.u && o.f && o.k ? { url: o.u, folder: o.f, token: o.k } : null; } catch (_) { return null; }
+  }
+  return { cfg, ready, folderId, ping, upload, teamConfig, consolidate, setupLink, parseSetup };
 })();

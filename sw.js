@@ -1,9 +1,9 @@
 /* Alba Field · service worker: la app abre y funciona sin señal. */
-const VERSION = 'albafield-2.0.0';
+const VERSION = 'albafield-2.1.0';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/drive.js', 'js/app.js', 'drive/Code.gs',
-  'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/jszip.min.js', 'vendor/piexif.js',
+  'vendor/leaflet.js', 'vendor/leaflet.css', 'vendor/jszip.min.js', 'vendor/piexif.js', 'vendor/qrcode.js',
   'vendor/images/layers.png', 'vendor/images/layers-2x.png', 'vendor/images/marker-icon.png', 'vendor/images/marker-icon-2x.png', 'vendor/images/marker-shadow.png',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'guia.html',
 ];
