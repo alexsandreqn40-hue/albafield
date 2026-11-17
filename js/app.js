@@ -1,5 +1,5 @@
 /* Alba Field 2 · aplicación de campo offline (PWA): Jornada → Estación → Fotos + notas de voz. */
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.2.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const CODE_RE = /^[A-Za-z0-9_\-]{1,32}$/;
@@ -8,8 +8,8 @@ const STAMP_FIELDS = [['proyecto', 'Proyecto · campaña · componente'], ['eval
 const DEFAULT_STAMP = { logoPos: 'tr', logoSize: 20, logoBg: true, bandPos: 'bottom', textStyle: 'outline', fields: Object.fromEntries(STAMP_FIELDS.map(([k]) => [k, true])) };
 
 const S = {
-  set: { north: true, maxAcc: 30, jpegQ: 0.9, drAuto: false, drCopy: false },
-  d: { jornadas: [], stations: [], photos: [], audios: [] },
+  set: { north: true, maxAcc: 30, jpegQ: 0.9, drAuto: true, drCopy: false },
+  d: { jornadas: [], stations: [], photos: [], audios: [], points: [], tracks: [] },
   jor: null, st: null, stPersisted: false,
   fix: null, heading: null, headingAt: 0, layers: [], allLayers: false,
   stream: null, busy: false, map: null, mapLayers: {}, syncing: false, rec: null,
@@ -46,7 +46,8 @@ const jorBase = j => `${j.specialist}_${j.project}_${j.campaign}_${j.date.replac
 const stationsOf = jid => S.d.stations.filter(s => s.jornada_id === jid).sort((a, b) => (a.time_utc || a.created_at || '').localeCompare(b.time_utc || b.created_at || ''));
 const photosOf = sid => S.d.photos.filter(p => p.station_id === sid).sort((a, b) => a.n - b.n);
 const audiosOf = sid => S.d.audios.filter(a => a.station_id === sid && !a.voided).sort((a, b) => a.n - b.n);
-const dataOfJor = j => ({ jornadas: [j], stations: S.d.stations.filter(s => s.jornada_id === j.id), photos: S.d.photos.filter(p => p.jornada_id === j.id), audios: S.d.audios.filter(a => a.jornada_id === j.id) });
+const dataOfJor = j => ({ jornadas: [j], stations: S.d.stations.filter(s => s.jornada_id === j.id), photos: S.d.photos.filter(p => p.jornada_id === j.id), audios: S.d.audios.filter(a => a.jornada_id === j.id),
+  points: S.d.points.filter(t => t.jornada_id === j.id), tracks: S.d.tracks.filter(t => t.jornada_id === j.id && t.status !== 'rec') });
 
 async function shareOrDownload(blob, name, title) {
   const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
@@ -64,10 +65,25 @@ function download(blob, name) {
 
 /* ---------------- arranque ---------------- */
 async function init() {
+  // la pantalla (index.html) y el código deben ser de la misma versión; si no, se completa la actualización antes de abrir
+  const htmlVer = (document.querySelector('meta[name="app-version"]') || {}).content;
+  if (htmlVer !== APP_VERSION && !sessionStorage.getItem('af_fix_' + APP_VERSION)) {
+    try { sessionStorage.setItem('af_fix_' + APP_VERSION, '1'); } catch (_) {}
+    busy(true, 'Actualizando Alba Field…');
+    try { const r = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (r) await r.update(); } catch (_) {}
+    setTimeout(() => location.reload(), 3500);
+    return;
+  }
   $('#verLine').textContent = `Alba Field ${APP_VERSION} · los datos quedan en este teléfono hasta que usted los envíe.`;
   if ('serviceWorker' in navigator) {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
+    // el envío en segundo plano avisa cuando terminó: se refrescan los datos en pantalla
+    navigator.serviceWorker.addEventListener('message', async e => {
+      if (!e.data || e.data.type !== 'albafield-synced' || S.syncing) return;
+      await loadAll(); await reload();
+      if (e.data.result && e.data.result.ok) drLog(`✓ Segundo plano: ${e.data.result.ok} archivos enviados${e.data.result.left ? ', ' + e.data.result.left + ' pendientes' : ''}`);
+    });
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadController || init._reloaded) return; init._reloaded = true;
       if (!S.stream && !S.busy && !S.rec) location.reload(); else toast('Nueva versión lista: cierre y abra la app');
@@ -75,6 +91,8 @@ async function init() {
   }
   await DB.open();
   S.set = { ...S.set, ...(await DB.kv('settings', {})) };
+  // 2.2: el envío automático pasa a estar activo por defecto (antes venía apagado y no se enviaba nada solo)
+  if (!(await DB.kv('defaults_2_2'))) { S.set.drAuto = true; await DB.setKv('settings', S.set); await DB.setKv('defaults_2_2', true); }
   S.allLayers = !!(await DB.kv('allLayers', false));
   await migrateV1();
   await handleSetupLink();
@@ -82,13 +100,16 @@ async function init() {
   const aj = await DB.kv('activeJor');
   S.jor = aj ? S.d.jornadas.find(j => j.id === aj && !j.closed_at) || null : null;
   if (S.jor) { const as = await DB.kv('activeSt'); const st = as && S.d.stations.find(s => s.id === as && s.jornada_id === S.jor.id); if (st) openStation(st.id, true); else newStation(true); }
-  bindTabs(); bindCampo(); bindFotos(); bindMap(); bindSend(); bindSettings();
+  // un elemento que falte en pantalla no debe impedir que la app abra
+  for (const f of [bindTabs, bindCampo, bindFotos, bindMap, bindSend, bindSettings]) { try { f(); } catch (e) { console.warn('bind', f.name, e); } }
   await reload();
   netBadge(); addEventListener('online', () => { netBadge(); autoSync(); refreshTeamConfig(false); }); addEventListener('offline', netBadge);
   setTimeout(() => refreshTeamConfig(false), 2500);
   startGps(); startCompass();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist().catch(() => {}); });
-  setInterval(autoSync, 180000); setTimeout(autoSync, 5000);
+  setInterval(autoSync, 120000); setTimeout(autoSync, 4000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { setTimeout(autoSync, 1500); if (S.trk) Track.wake(); if (!S.fix || Date.now() - S.fix.got > 20000) startGps(); } });
+  Track.resume();
 }
 
 /* Registros 1.x (1 foto = 1 registro) → jornadas, estaciones y fotos. Las fotos conservan su ID y sus archivos. */
@@ -114,8 +135,12 @@ async function migrateV1() {
 }
 
 async function loadAll() {
-  const [j, s, p, a] = await Promise.all(['jornadas', 'stations', 'photos', 'audios'].map(n => DB.all(n)));
-  S.d = { jornadas: j, stations: s, photos: p, audios: a };
+  const [j, s, p, a, pt, tr] = await Promise.all(['jornadas', 'stations', 'photos', 'audios', 'points', 'tracks'].map(n => DB.all(n)));
+  S.d = { jornadas: j, stations: s, photos: p, audios: a, points: pt, tracks: tr };
+  // se mantienen enlazados los objetos en uso (jornada activa, estación en edición, track grabando)
+  if (S.jor) S.jor = j.find(x => x.id === S.jor.id) || S.jor;
+  if (S.st && S.stPersisted) { const i = s.findIndex(x => x.id === S.st.id); if (i >= 0) { const { _stampedAs } = S.st; s[i] = S.st; S.st._stampedAs = _stampedAs; } }
+  if (S.trk) { const i = tr.findIndex(x => x.id === S.trk.id); if (i >= 0) tr[i] = S.trk; else tr.push(S.trk); }
 }
 async function reload() {
   const P = S.jor ? S.jor.project : '';
@@ -393,6 +418,7 @@ async function saveStation(quiet) {
     s._stampedAs = stampSig(s);
   }
   const n = photosOf(s.id).filter(p => !p.voided).length, na = audiosOf(s.id).length;
+  clearTimeout(saveStation._t); saveStation._t = setTimeout(autoSync, 8000); requestBgSync();
   if (!quiet) toast(`Estación ${s.station} guardada ✓ · ${n} fotos · ${na} audios${s.qa.length ? ' · QA: ' + s.qa[0] : ''}`, 4000);
   await reload();
   return true;
@@ -462,9 +488,12 @@ async function deleteAudio(id) {
 let fixWaiters = [];
 function startGps() {
   if (!('geolocation' in navigator)) { gpsUi(null, 'Este navegador no tiene GPS'); return; }
-  navigator.geolocation.watchPosition(p => {
+  if (S.gpsWatch != null) navigator.geolocation.clearWatch(S.gpsWatch);
+  S.gpsWatch = navigator.geolocation.watchPosition(p => {
     S.fix = { lat: p.coords.latitude, lon: p.coords.longitude, alt: p.coords.altitude, acc: p.coords.accuracy, ts: p.timestamp, got: Date.now() };
     gpsUi(S.fix); fixWaiters.splice(0).forEach(w => w(S.fix)); nearSuggest();
+    fixListeners.forEach(f => f(S.fix)); Track.onFix(S.fix);
+    if (S.map && $('#view-mapa').classList.contains('active')) updateMe();
   }, e => gpsUi(null, e.code === 1 ? 'Permiso de ubicación denegado' : 'Buscando GPS…'), { enableHighAccuracy: true, maximumAge: 0, timeout: 60000 });
 }
 function gpsUi(fx, msg) {
@@ -495,7 +524,10 @@ function startCompass() {
     let v = null;
     if (typeof e.webkitCompassHeading === 'number') v = e.webkitCompassHeading;
     else if (e.alpha != null && (e.absolute || e.type === 'deviceorientationabsolute')) v = Geo.cameraHeading(e.alpha, e.beta, e.gamma);
-    if (v != null && isFinite(v)) { S.heading = (v + 360) % 360; S.headingAt = Date.now(); if (!$('#camera').hidden) camHud(); }
+    if (v != null && isFinite(v)) {
+      S.heading = (v + 360) % 360; S.headingAt = Date.now(); if (!$('#camera').hidden) camHud();
+      if (S.map && Date.now() - (startCompass._t || 0) > 400 && $('#view-mapa').classList.contains('active')) { startCompass._t = Date.now(); updateMe(); }
+    }
   };
   if ('ondeviceorientationabsolute' in window) addEventListener('deviceorientationabsolute', h);
   else addEventListener('deviceorientation', h);
@@ -757,24 +789,74 @@ function bindFotos() {
 
 /* ---------------- mapa ---------------- */
 function bindMap() {
-  $('#btnLocate').onclick = () => { if (!S.map) return; if (S.fix) S.map.setView([S.fix.lat, S.fix.lon], Math.max(S.map.getZoom(), 16)); else toast('Esperando GPS…'); };
+  $('#btnFollow').onclick = () => {
+    if (!S.map) return;
+    if (!S.fix) { toast('Esperando señal GPS del equipo… salga a cielo abierto'); return; }
+    S.follow = !S.follow || !S.map.getBounds().contains([S.fix.lat, S.fix.lon]);
+    if (S.follow) S.map.setView([S.fix.lat, S.fix.lon], Math.max(S.map.getZoom(), 17));
+    $('#btnFollow').classList.toggle('on', S.follow);
+  };
+  $('#btnPoint').onclick = markPoint;
+  $('#btnTrack').onclick = () => S.trk ? Track.stop() : Track.start();
+  $('#btnTrkPause').onclick = () => Track.togglePause();
+  $('#btnTrkStop').onclick = () => Track.stop();
   $('#kmlIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) await importLayer(f); };
   $('#tilesIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) await importTiles(f); };
   $('#btnLayers').onclick = () => { const p = $('#layerPanel'); p.hidden = !p.hidden; renderLayerPanel(); };
+  // botones dentro de los globos del mapa (eliminar punto o track)
+  $('#map').addEventListener('click', e => { const b = e.target.closest('[data-delpt],[data-deltr]'); if (b) { e.preventDefault(); b.dataset.delpt ? deletePoint(b.dataset.delpt) : deleteTrack(b.dataset.deltr); } });
 }
+/* Cuadrícula de fondo: sin señal y sin mapa descargado el mapa no queda en gris, se ven posición, puntos y tracks */
+const GridLayer = L.GridLayer.extend({
+  createTile(c) {
+    const t = document.createElement('canvas'), z = this._tileZoom; t.width = t.height = 256;
+    const g = t.getContext('2d'); g.fillStyle = '#eef2ec'; g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = 'rgba(31,59,45,0.14)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, 0.5); g.lineTo(256, 0.5); g.moveTo(0.5, 0); g.lineTo(0.5, 256); g.stroke();
+    if (z >= 15) { g.strokeStyle = 'rgba(31,59,45,0.06)'; g.beginPath(); for (let i = 64; i < 256; i += 64) { g.moveTo(0, i + .5); g.lineTo(256, i + .5); g.moveTo(i + .5, 0); g.lineTo(i + .5, 256); } g.stroke(); }
+    return t;
+  },
+});
 async function initMap() {
-  if (S.map) { S.map.invalidateSize(); renderMapData(); return; }
-  const m = L.map('map', { zoomControl: true, preferCanvas: true });
+  if (S.map) { S.map.invalidateSize(); renderMapData(); updateMe(true); return; }
+  const m = L.map('map', { zoomControl: true, preferCanvas: true, maxZoom: 21 });
   S.map = m;
-  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, maxNativeZoom: 19, attribution: '© OpenStreetMap' });
+  new GridLayer({ maxZoom: 21, zIndex: 0 }).addTo(m);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap', zIndex: 1 });
   const meta = await DB.kv('tiles_meta');
-  const offOpt = { maxZoom: 21, maxNativeZoom: meta ? meta.maxZ : 18, minZoom: meta ? Math.max(0, meta.minZ - 1) : 0, attribution: meta ? meta.attr : '' };
+  const offOpt = { maxZoom: 21, maxNativeZoom: meta ? meta.maxZ : 18, minZoom: meta ? Math.max(0, meta.minZ - 1) : 0, attribution: meta ? meta.attr : '', zIndex: 2 };
   if (meta && meta.bounds) offOpt.bounds = L.latLngBounds([meta.bounds.s, meta.bounds.w], [meta.bounds.n, meta.bounds.e]).pad(0.5);
   const off = L.tileLayer('_tiles/{z}/{x}/{y}.png', offOpt);
   osm.addTo(m); if (meta) off.addTo(m);
-  S.mapLayers.base = L.control.layers({ 'OpenStreetMap (con señal / caché)': osm }, { 'Mapa offline importado': off }, { position: 'topright' }).addTo(m);
-  m.setView(S.fix ? [S.fix.lat, S.fix.lon] : [-9.19, -75.02], S.fix ? 15 : 5);
-  renderMapData(true);
+  S.mapLayers.base = L.control.layers({ 'OpenStreetMap (con señal / lo ya visto)': osm }, { 'Mapa offline importado': off }, { position: 'topright' }).addTo(m);
+  L.control.scale({ imperial: false, position: 'topleft' }).addTo(m);
+  m.on('dragstart', () => { if (S.follow) { S.follow = false; $('#btnFollow').classList.remove('on'); } });
+  S.follow = true; $('#btnFollow').classList.add('on');
+  m.setView(S.fix ? [S.fix.lat, S.fix.lon] : [-9.19, -75.02], S.fix ? 17 : 5);
+  renderMapData(!S.fix);
+  updateMe(true);
+}
+/* Mi posición: punto azul grande con borde blanco, círculo de precisión y flecha de rumbo; se actualiza con cada lectura del GPS */
+function updateMe(center) {
+  const m = S.map, fx = S.fix; if (!m || !m._loaded) return;   // el mapa aún no tiene vista: dibujar ahora deja un círculo gigante
+  const panel = $('#posPanel');
+  if (!fx) { panel.innerHTML = '<b>Buscando señal GPS…</b><br><small>El GPS del equipo funciona sin datos móviles; a cielo abierto tarda menos.</small>'; return; }
+  const ll = [fx.lat, fx.lon], h = S.heading != null && Date.now() - S.headingAt < 5000 ? S.heading : null;
+  const html = `<div class="me ${fx.acc > S.set.maxAcc ? 'weak' : ''}">${h != null ? `<div class="me-cone" style="transform:rotate(${Math.round(h)}deg)"></div>` : ''}<div class="me-pulse"></div><div class="me-dot"></div></div>`;
+  if (!S.me) {
+    S.me = {
+      acc: L.circle(ll, { radius: fx.acc, color: '#1d4ed8', weight: 1.5, fillColor: '#3b82f6', fillOpacity: 0.12, interactive: false }).addTo(m),
+      dot: L.marker(ll, { icon: L.divIcon({ className: 'me-icon', html, iconSize: [64, 64], iconAnchor: [32, 32] }), interactive: false, zIndexOffset: 2000, keyboard: false }).addTo(m),
+    };
+  } else {
+    S.me.acc.setLatLng(ll).setRadius(fx.acc);
+    S.me.dot.setLatLng(ll);
+    if (S.me.html !== html) S.me.dot.setIcon(L.divIcon({ className: 'me-icon', html, iconSize: [64, 64], iconAnchor: [32, 32] }));
+  }
+  S.me.html = html;
+  if (S.follow && (center || !m.getBounds().pad(-0.25).contains(ll))) m.panTo(ll, { animate: true });
+  const u = Geo.toUTM(fx.lat, fx.lon), age = Math.round((Date.now() - fx.got) / 1000);
+  panel.innerHTML = `<b class="${fx.acc <= 10 ? 'g' : fx.acc <= S.set.maxAcc ? 'f' : 'p'}">±${Math.round(fx.acc)} m</b> · UTM ${u.zone} <b>${Math.round(u.e)}</b> E <b>${Math.round(u.n)}</b> N${fx.alt != null ? ' · ' + Math.round(fx.alt) + ' msnm' : ''}<br><small>${fx.lat.toFixed(6)}, ${fx.lon.toFixed(6)} · ${age > 5 ? 'hace ' + age + ' s · ' : ''}GPS del equipo${navigator.onLine ? '' : ' · <b>sin datos móviles: funciona igual</b>'}</small>`;
 }
 function renderMapData(fit) {
   const m = S.map; if (!m) return;
@@ -794,9 +876,143 @@ function renderMapData(fit) {
     mk.bindTooltip(s.station);
     mk.bindPopup(() => { const d = document.createElement('div'); const ph = photosOf(s.id).filter(p => !p.voided); d.innerHTML = `<b>${esc(s.station)}</b> · ${dmy(s.date)}<br>${esc(s.component)} · ${ph.length} fotos · ${audiosOf(s.id).length} audios${s.notes ? '<br><small>' + esc(s.notes.slice(0, 120)) + '</small>' : ''}<br><img alt="">`; if (ph[0]) thumbUrl(ph[0].id).then(u => d.querySelector('img').src = u); return d; });
   }
-  if (S.fix) L.circle([S.fix.lat, S.fix.lon], { radius: S.fix.acc, color: '#2563eb', weight: 1, fillOpacity: 0.08 }).addTo(g);
+  // tracks y puntos marcados
+  for (const t of S.d.tracks.filter(t => !t.voided && (!P || t.project === P) && (t.pts || []).length > 1 && (!S.trk || t.id !== S.trk.id))) {
+    L.polyline(t.pts.map(q => [q[0], q[1]]), { color: '#d62b2b', weight: 4, opacity: 0.85 }).bindPopup(`<b>${esc(t.name)}</b> · ${Math.round(t.distance_m || 0)} m · ${Math.round((t.duration_s || 0) / 60)} min<br><small>${esc(t.specialist)} · ${esc((t.started_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm danger" data-deltr="${t.id}">Eliminar track</button>`).addTo(g);
+  }
+  for (const t of S.d.points.filter(t => !t.voided && (!P || t.project === P))) {
+    L.circleMarker([t.lat, t.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#f0781f', fillOpacity: 1 }).bindTooltip(t.name).bindPopup(`<b>${esc(t.name)}</b> · ±${Math.round(t.accuracy || 0)} m<br><small>${t.utm_zone ? `${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N<br>` : ''}${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm danger" data-delpt="${t.id}">Eliminar punto</button>`).addTo(g);
+  }
+  if (S.trk) { S.trkLine = L.polyline(S.trk.pts.map(q => [q[0], q[1]]), { color: '#d62b2b', weight: 5, dashArray: S.trk.status === 'paused' ? '6 8' : null }).addTo(g); }
   if (fit && g.getLayers().length) { try { m.fitBounds(g.getBounds().pad(0.2), { maxZoom: 16 }); } catch (_) {} }
 }
+
+/* ---------------- puntos marcados (promedio de lecturas GPS) ---------------- */
+const fixListeners = new Set();
+function needJornada() {
+  if (S.jor) return true;
+  ask('<p>Para marcar puntos o grabar tracks primero inicie una <b>jornada</b> (proyecto, campaña y evaluador): así quedan en sus productos y en Drive.</p>', [['Ir a Campo', true]]).then(() => showView('campo'));
+  return false;
+}
+async function markPoint() {
+  if (!needJornada()) return;
+  if (!S.fix) { toast('Esperando señal GPS del equipo… salga a cielo abierto'); return; }
+  // se promedian las lecturas de hasta 10 s (o 8 lecturas) ponderadas por precisión
+  const fixes = [S.fix];
+  busy(true, 'Promediando GPS… quédese quieto');
+  await new Promise(res => {
+    const t0 = Date.now();
+    const f = fx => { fixes.push(fx); $('#busyText').textContent = `Promediando GPS… ${fixes.length} lecturas · ±${Math.round(Math.min(...fixes.map(x => x.acc)))} m`; if (fixes.length >= 8) done(); };
+    const done = () => { fixListeners.delete(f); clearTimeout(tm); res(); };
+    const tm = setTimeout(done, Math.max(2500, 10000 - (Date.now() - t0)));
+    fixListeners.add(f);
+  });
+  busy(false);
+  const good = fixes.filter(x => x.acc <= Math.max(S.set.maxAcc, Math.min(...fixes.map(y => y.acc)) * 2));
+  const w = good.map(x => 1 / Math.max(1, x.acc) ** 2), W = w.reduce((a, b) => a + b, 0);
+  const lat = good.reduce((a, x, i) => a + x.lat * w[i], 0) / W, lon = good.reduce((a, x, i) => a + x.lon * w[i], 0) / W;
+  const alts = good.filter(x => x.alt != null).map(x => x.alt), acc = Math.min(...good.map(x => x.acc)) / Math.sqrt(Math.min(good.length, 4));
+  const n = S.d.points.filter(t => t.jornada_id === S.jor.id).length + 1, def = `P-${String(n).padStart(3, '0')}`;
+  const u = Geo.toUTM(lat, lon);
+  const ok = await ask(`<h3>📍 Marcar punto</h3><p class="hint">${good.length} lecturas · ±${Math.round(acc)} m · UTM ${u.zone} ${Math.round(u.e)} E ${Math.round(u.n)} N</p><label>Nombre<input id="ptName" value="${def}" autocapitalize="characters"></label><label>Nota<textarea id="ptNote" rows="2" placeholder="ej. Nido, cruce de quebrada, acceso"></textarea></label>`, [['Cancelar', false], ['Guardar punto', true]]);
+  const name = up(($('#ptName') || {}).value || def) || def, notes = (($('#ptNote') || {}).value || '').trim();
+  if (!ok) return;
+  const now = new Date(), j = S.jor;
+  const t = { id: uid(), jornada_id: j.id, project: j.project, campaign: j.campaign, component: j.component, specialist: j.specialist, person: j.person, date: j.date, name, notes,
+    lat, lon, alt: alts.length ? alts.reduce((a, b) => a + b, 0) / alts.length : null, accuracy: Math.round(acc * 10) / 10, n_fixes: good.length,
+    utm_zone: u.zone, utm_e: u.e, utm_n: u.n, time_local: localIso(now), time_utc: now.toISOString(), created_at: now.toISOString(), app_version: APP_VERSION };
+  await DB.put('points', t); S.d.points.push(t);
+  renderMapData(); toast(`Punto ${name} guardado ✓`);
+  clearTimeout(markPoint._t); markPoint._t = setTimeout(autoSync, 8000);
+}
+async function deletePoint(id) {
+  const t = S.d.points.find(x => x.id === id); if (!t) return;
+  if (!(await ask(`<p>¿Eliminar el punto <b>${esc(t.name)}</b>? No se puede deshacer.</p>`, [['Cancelar', false], ['Eliminar', true, 'danger']]))) return;
+  await DB.del('points', id); S.d.points = S.d.points.filter(x => x.id !== id);
+  await touchJornada(t.jornada_id); S.map && S.map.closePopup(); renderMapData(); toast('Punto eliminado');
+}
+async function deleteTrack(id) {
+  const t = S.d.tracks.find(x => x.id === id); if (!t) return;
+  if (!(await ask(`<p>¿Eliminar el track <b>${esc(t.name)}</b> (${Math.round(t.distance_m || 0)} m)? No se puede deshacer.</p>`, [['Cancelar', false], ['Eliminar', true, 'danger']]))) return;
+  await DB.del('tracks', id); S.d.tracks = S.d.tracks.filter(x => x.id !== id);
+  await touchJornada(t.jornada_id); S.map && S.map.closePopup(); renderMapData(); toast('Track eliminado');
+}
+/* marca la jornada como modificada para regenerar sus productos en el próximo envío */
+async function touchJornada(jid) { const j = S.d.jornadas.find(x => x.id === jid); if (j) { j.edited_at = new Date().toISOString(); await DB.put('jornadas', j); } }
+
+/* ---------------- track: recorrido con el GPS del equipo ----------------
+   Graba mientras la app está abierta (se mantiene la pantalla encendida). Cada punto se guarda en el teléfono:
+   si la app se cierra, al abrirla el track continúa. */
+const Track = {
+  async start() {
+    if (!needJornada()) return;
+    const j = S.jor, n = S.d.tracks.filter(t => t.jornada_id === j.id).length + 1, now = new Date();
+    S.trk = { id: uid(), jornada_id: j.id, project: j.project, campaign: j.campaign, component: j.component, specialist: j.specialist, person: j.person, date: j.date,
+      name: `T-${String(n).padStart(2, '0')}`, notes: '', status: 'rec', pts: [], distance_m: 0, duration_s: 0, paused_ms: 0,
+      started_at: now.toISOString(), started_local: localIso(now), time_utc: now.toISOString(), created_at: now.toISOString(), app_version: APP_VERSION };
+    await DB.put('tracks', S.trk); S.d.tracks.push(S.trk);
+    this.wake(); this.ui(); renderMapData();
+    toast('⏺ Grabando track: mantenga la app abierta (la pantalla no se apagará)', 5000);
+    if (S.fix) this.onFix(S.fix);
+  },
+  async resume() {
+    const t = (await DB.all('tracks')).find(x => x.status === 'rec' || x.status === 'paused');
+    if (!t) return;
+    S.trk = S.d.tracks.find(x => x.id === t.id) || t; S.trk.gap = true;
+    this.wake(); this.ui();
+    toast(`⏺ El track ${t.name} sigue ${t.status === 'rec' ? 'grabando' : 'en pausa'}`, 4000);
+  },
+  onFix(fx) {
+    const t = S.trk; if (!t || t.status !== 'rec' || fx.acc > Math.max(30, S.set.maxAcc)) return;
+    const last = t.pts[t.pts.length - 1];
+    const d = last ? Geo.dist(last[0], last[1], fx.lat, fx.lon) : Infinity;
+    if (last && d < Math.max(4, fx.acc * 0.6)) { this.ui(); return; }          // filtra el "baile" del GPS estando quieto
+    if (last && !t.gap) t.distance_m += d;
+    t.gap = false;
+    t.pts.push([+fx.lat.toFixed(7), +fx.lon.toFixed(7), fx.alt != null ? Math.round(fx.alt * 10) / 10 : null, Math.round(fx.acc), fx.ts || Date.now()]);
+    if (S.trkLine) S.trkLine.addLatLng([fx.lat, fx.lon]);
+    this.ui();
+    if (!this._sv || Date.now() - this._sv > 8000) { this._sv = Date.now(); this.save(); }
+  },
+  async save() { const t = S.trk; if (!t) return; t.duration_s = Math.round((Date.now() - Date.parse(t.started_at) - (t.paused_ms || 0) - (t.status === 'paused' ? Date.now() - t.paused_at : 0)) / 1000); const { gap, ...c } = t; await DB.put('tracks', c); },
+  async togglePause() {
+    const t = S.trk; if (!t) return;
+    if (t.status === 'rec') { t.status = 'paused'; t.paused_at = Date.now(); this.release(); }
+    else { t.paused_ms = (t.paused_ms || 0) + (Date.now() - (t.paused_at || Date.now())); t.status = 'rec'; t.gap = true; this.wake(); }
+    await this.save(); this.ui(); renderMapData();
+  },
+  async stop() {
+    const t = S.trk; if (!t) return;
+    if (t.status === 'paused') { t.paused_ms = (t.paused_ms || 0) + (Date.now() - t.paused_at); t.status = 'rec'; }
+    await this.save();
+    const v = await ask(`<h3>Terminar track</h3><p>${t.pts.length} puntos · ${Math.round(t.distance_m)} m · ${fmtDur(t.duration_s)}</p><label>Nombre<input id="trName" value="${esc(t.name)}" autocapitalize="characters"></label><label>Nota<textarea id="trNote" rows="2" placeholder="ej. Transecto de flora, acceso a E-05">${esc(t.notes)}</textarea></label>`,
+      [['Seguir grabando', false], ['Descartar', 'discard', 'danger'], ['Guardar track', true]]);
+    if (!v) return;
+    if (v === 'discard') {
+      if (!(await ask('<p>¿Descartar este track? Se borra del teléfono.</p>', [['No', false], ['Descartar', true, 'danger']]))) return;
+      await DB.del('tracks', t.id); S.d.tracks = S.d.tracks.filter(x => x.id !== t.id);
+    } else {
+      t.name = up(($('#trName') || {}).value || t.name) || t.name; t.notes = (($('#trNote') || {}).value || '').trim();
+      const now = new Date(); t.status = 'done'; t.ended_at = now.toISOString(); t.ended_local = localIso(now); t.saved_at = now.toISOString();
+      await this.save();
+      toast(`Track ${t.name} guardado ✓ · ${Math.round(t.distance_m)} m`);
+      clearTimeout(this._as); this._as = setTimeout(autoSync, 8000);
+    }
+    S.trk = null; S.trkLine = null; this.release(); this.ui(); renderMapData();
+  },
+  async wake() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible' && S.trk && S.trk.status === 'rec') { S.wakeLock = await navigator.wakeLock.request('screen'); } } catch (_) {} },
+  release() { try { S.wakeLock && S.wakeLock.release(); } catch (_) {} S.wakeLock = null; },
+  ui() {
+    const t = S.trk, p = $('#trkPanel'), b = $('#btnTrack');
+    b.classList.toggle('rec', !!t); b.textContent = t ? '■' : '⏺'; b.title = t ? 'Terminar track' : 'Grabar track';
+    p.hidden = !t; if (!t) return;
+    const dur = Math.round((Date.now() - Date.parse(t.started_at) - (t.paused_ms || 0) - (t.status === 'paused' ? Date.now() - t.paused_at : 0)) / 1000);
+    $('#trkInfo').innerHTML = `${t.status === 'rec' ? '<span class="recdot"></span>' : '⏸'} <b>${esc(t.name)}</b> · ${t.distance_m >= 1000 ? (t.distance_m / 1000).toFixed(2) + ' km' : Math.round(t.distance_m) + ' m'} · ${fmtDur(dur)} · ${t.pts.length} pts`;
+    $('#btnTrkPause').textContent = t.status === 'rec' ? 'Pausa' : 'Seguir';
+  },
+};
+setInterval(() => { if (S.trk) Track.ui(); }, 1000);
+
 async function importLayer(file) {
   const last = (await DB.kv('lastJor', {})) || {};
   const P = S.jor ? S.jor.project : up(last.project);
@@ -868,6 +1084,8 @@ async function productsOf(j, progress) {
   if (d.photos.some(p => !p.voided && p.send !== false)) {
     out.push([`${base}_GALERIA.docx`, await Exports.gallery(d, galleryImage, { title: 'Galería fotográfica', subtitle: `${j.project} · ${j.campaign} · ${j.component} · ${j.person || j.specialist} · ${dmy(j.date)}`, header: `${j.project} · ${j.campaign} — Galería fotográfica` }, (i, n) => progress && progress(`Galería Word ${i}/${n}…`))]);
   }
+  const g = Exports.gpx(d, `${j.project} ${j.campaign} · ${j.specialist} · ${dmy(j.date)}`);
+  if (g) out.push([`${base}_PUNTOS_TRACKS.gpx`, g]);
   out.push([`datos_${base}.json`, new Blob([JSON.stringify({ schema: 'albafield/2', app: APP_VERSION, generated_utc: new Date().toISOString(), ...d }, null, 1)], { type: 'application/json' })]);
   return out;
 }
@@ -931,62 +1149,146 @@ async function renderDriveState() {
   const c = await Drive.cfg();
   $('#drAuto').checked = !!S.set.drAuto; $('#drCopy').checked = !!S.set.drCopy;
   const n = S.d.photos.filter(needsUpload).length, na = S.d.audios.filter(needsUpload).length;
-  $('#drState').textContent = Drive.ready(c) ? `Configurado ✓ · ${n} fotos y ${na} audios por enviar${c.rootName ? ' · carpeta: ' + c.rootName : ''}` : 'No configurado. Ver Ajustes → Google Drive.';
+  const ver = await DB.kv('drive_ver'), last = await DB.kv('sync_last');
+  $('#drState').innerHTML = !Drive.ready(c) ? 'No configurado. Ver Ajustes → Google Drive.'
+    : `Configurado ✓${c.rootName ? ' · carpeta: ' + esc(c.rootName) : ''} · <b>${n} fotos y ${na} audios por enviar</b>`
+      + (last ? `<br>Último intento: ${new Date(last.at).toLocaleString()} · ${last.ok} enviados${last.failed ? ', ' + last.failed + ' con error' : ''}${last.aborted ? ' · ' + esc(last.aborted) : ''}` : '');
+  // aviso fijo si el receptor está desactualizado (la app sigue enviando igual)
+  const v = ver ? ver.v : null;
+  $('#verWarn').hidden = !(Drive.ready(c) && v && v < 4);
+  if (v && v < 4) $('#verWarn').innerHTML = `<b>Receptor de Drive versión ${v}.</b> Las fotos se envían igual, pero sin envío por partes (las fotos pesadas fallan con señal débil)${v < 3 ? ', sin configuración del equipo y sin consolidado' : ''}. <a href="guia.html#drive" target="_blank">Actualícelo a la versión 4</a> (5 minutos, la URL no cambia).`;
+  renderPendList();
+}
+/* Lista de pendientes con su estado: el usuario ve qué falta y por qué */
+function renderPendList() {
+  const items = [...S.d.photos.filter(needsUpload).map(x => [x.photo_name + '.jpg', x]), ...S.d.audios.filter(needsUpload).map(x => [x.file_name, x])]
+    .sort((a, b) => (b[1].fail_count || 0) - (a[1].fail_count || 0) || (a[1].time_utc || '').localeCompare(b[1].time_utc || ''));
+  const el = $('#pendList');
+  if (!items.length) { el.innerHTML = ''; $('#btnRetry').hidden = true; return; }
+  $('#btnRetry').hidden = false;
+  const now = Date.now();
+  el.innerHTML = `<b>Pendientes (${items.length})</b>` + items.slice(0, 40).map(([name, x]) => {
+    const st = x.sync_error ? (ts(x.next_try_at) > now ? `reintento ${new Date(x.next_try_at).toLocaleTimeString().slice(0, 5)}` : 'reintento al próximo envío') : (x.uploaded_at ? 'editado: se reenviará' : 'en cola');
+    return `<div class="pend ${x.sync_error ? 'err' : ''}"><span>${esc(name)}</span><small>${st}${x.sync_error ? ' · ' + esc(x.sync_error) : ''}</small></div>`;
+  }).join('') + (items.length > 40 ? `<small>… y ${items.length - 40} más</small>` : '');
 }
 function drLog(t) { const l = $('#drLog'); l.textContent = `${new Date().toLocaleTimeString()} ${t}\n` + l.textContent.slice(0, 3000); }
-async function autoSync() { if (S.set.drAuto && navigator.onLine && !S.syncing && !S.stream && !S.rec) { try { if (Drive.ready(await Drive.cfg())) await syncDrive(false); } catch (_) {} } }
+/* Envío automático: al abrir la app, al volver la señal, al volver a la app y cada 2 min mientras haya pendientes */
+async function autoSync() {
+  if (!S.set.drAuto || !navigator.onLine || S.syncing || S.stream || S.rec) return;
+  try {
+    if (!Drive.ready(await Drive.cfg())) return;
+    const pend = S.d.photos.some(needsUpload) || S.d.audios.some(needsUpload) || S.d.jornadas.some(jornadaDirty);
+    if (pend) await syncDrive(false);
+  } catch (_) {}
+}
+/* Pide al navegador que envíe en segundo plano cuando haya señal (Android/Chrome; en iPhone se envía al abrir la app) */
+function requestBgSync() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(r => r.sync && r.sync.register('albafield-media')).catch(() => {});
+}
 function jornadaDirty(j) {
   const t = ts(j.products_at);
-  const kids = [...S.d.stations.filter(s => s.jornada_id === j.id), ...S.d.photos.filter(p => p.jornada_id === j.id), ...S.d.audios.filter(a => a.jornada_id === j.id)];
+  const kids = [...S.d.stations.filter(s => s.jornada_id === j.id), ...S.d.photos.filter(p => p.jornada_id === j.id), ...S.d.audios.filter(a => a.jornada_id === j.id),
+    ...S.d.points.filter(x => x.jornada_id === j.id), ...S.d.tracks.filter(x => x.jornada_id === j.id && x.status !== 'rec')];
   return (kids.length && kids.some(x => Math.max(ts(x.created_at), ts(x.edited_at), ts(x.saved_at)) > t)) || ts(j.edited_at) > t;
 }
+const mediaPending = j => S.d.photos.some(p => p.jornada_id === j.id && needsUpload(p)) || S.d.audios.some(a => a.jornada_id === j.id && needsUpload(a));
 async function syncDrive(manual) {
   if (S.syncing) return; const c = await Drive.cfg();
   if (!Drive.ready(c)) { if (manual) { showView('ajustes'); toast('Configure Google Drive en Ajustes'); } return; }
-  if (!navigator.onLine) { if (manual) toast('Sin señal: se enviará cuando haya conexión'); return; }
+  if (!navigator.onLine) { if (manual) toast('Sin señal: se enviará solo cuando vuelva la conexión'); requestBgSync(); return; }
   if (S.stPersisted && manual) { const before = stampSig(S.st) + '|' + S.st.notes; readStationForm(); if (before !== stampSig(S.st) + '|' + S.st.notes) await saveStationDraft(); }
-  S.syncing = true; if (manual) busy(true, 'Conectando con Google Drive…');
-  let ok = 0, fail = 0, stop = false;
-  const touched = new Set();
+  S.syncing = true; $('#syncDot').hidden = false;
+  if (manual) busy(true, 'Conectando con Google Drive…');
   const step = t => { if (manual) $('#busyText').textContent = t; };
+  let res = { ok: 0, failed: 0, touched: [] }, prodOk = 0, prodFail = 0;
   try {
-    const items = [...S.d.photos.filter(needsUpload).map(x => ['p', x]), ...S.d.audios.filter(needsUpload).map(x => ['a', x])].sort((a, b) => a[1].time_utc.localeCompare(b[1].time_utc));
-    for (const [i, [k, x]] of items.entries()) {
-      const j = S.d.jornadas.find(j => j.id === x.jornada_id); if (!j) continue;
-      step(`Enviando ${i + 1}/${items.length} · ${k === 'p' ? x.photo_name : x.file_name}`);
-      try {
-        const b = await DB.get('blobs', x.id);
-        if (k === 'p') {
-          const r = await Drive.upload([...jorPath(j), 'FOTOS'], x.photo_name + '.jpg', b.stamped); x.drive_id = r.id;
-          if (c.orig && b.original) await Drive.upload([...jorPath(j), 'FOTOS', 'ORIGINALES'], x.photo_name + '_original.jpg', b.original);
-        } else { const r = await Drive.upload([...jorPath(j), 'AUDIOS'], x.file_name, b.audio); x.drive_id = r.id; }
-        x.uploaded_at = new Date().toISOString(); x.sync_error = null;
-        await DB.put(k === 'p' ? 'photos' : 'audios', x); touched.add(j.id); ok++;
-      } catch (e) { x.sync_error = e.message; fail++; drLog(`✗ ${k === 'p' ? x.photo_name : x.file_name}: ${e.message}`); if (/Clave|configurado|publicado|exec|getFolderById|No item|acceso|conexión|agotado/i.test(e.message)) { stop = true; break; } }
-    }
-    if (!stop) for (const j of S.d.jornadas.filter(j => touched.has(j.id) || jornadaDirty(j))) {
-      try {
-        const prods = await productsOf(j, t => step(`${j.date} · ${t}`));
-        for (const [n, blob] of prods) { step(`Subiendo ${n}…`); await Drive.upload([...jorPath(j), 'PRODUCTOS'], n, blob); ok++; }
-        step(`Consolidando ${j.project}/${j.campaign} en Google Sheets…`);
+    // 1) fotos y audios (motor compartido con el segundo plano)
+    res = await Sync.run({ manual, log: drLog, onStep: (i, n, name) => step(`Enviando ${i}/${n} · ${name}`) });
+    if (res.busy) { if (manual) toast('Ya se está enviando en segundo plano; espere unos segundos'); return; }
+    await loadAll();
+    // 2) productos y consolidado: por jornada, cuando ya no le faltan archivos (o si lo pide el usuario)
+    if (!res.aborted || res.kind === 'net' && res.ok) {
+      const ver = res.ver || 2;
+      for (const j of S.d.jornadas.filter(j => (res.touched.includes(j.id) || jornadaDirty(j)) && (manual || !mediaPending(j)))) {
+        if (!navigator.onLine) break;
         try {
-          const r = await Drive.consolidate(j.project, j.campaign, Exports.tables(dataOfJor(j)));
-          const urls = (await DB.kv('cons_urls', {})) || {}; urls[`${j.project}/${j.campaign}`] = r.url; await DB.setKv('cons_urls', urls);
-          drLog(`✓ Consolidado ${j.project}/${j.campaign}: ${r.nuevos} nuevos, ${r.actualizados} actualizados`);
-        } catch (e) { drLog(`⚠ Consolidado ${j.project}/${j.campaign}: ${e.message}`); }
-        j.products_at = new Date().toISOString(); await DB.put('jornadas', j); touched.add(j.id);
-        drLog(`✓ Productos de ${j.date} actualizados`);
-      } catch (e) { fail++; drLog(`✗ Productos ${j.date}: ${e.message}`); }
+          const prods = await productsOf(j, t => step(`${j.date} · ${t}`));
+          for (const [n, blob] of prods) { step(`Subiendo ${n}…`); await Drive.upload([...jorPath(j), 'PRODUCTOS'], n, blob, { ver, onPart: (k, t) => step(`Subiendo ${n} · parte ${k}/${t}`) }); }
+          if (ver >= 3) {
+            step(`Consolidando ${j.project}/${j.campaign} en Google Sheets…`);
+            try {
+              const r = await Drive.consolidate(j.project, j.campaign, Exports.tables(dataOfJor(j)));
+              const urls = (await DB.kv('cons_urls', {})) || {}; if (r.url) urls[`${j.project}/${j.campaign}`] = r.url; await DB.setKv('cons_urls', urls);
+              drLog(`✓ Consolidado ${j.project}/${j.campaign}: ${r.nuevos || 0} nuevos, ${r.actualizados || 0} actualizados`);
+            } catch (e) { drLog(`⚠ Consolidado ${j.project}/${j.campaign}: ${e.message}`); }
+          }
+          const fresh = (await DB.get('jornadas', j.id)) || j;
+          fresh.products_at = new Date().toISOString(); await DB.put('jornadas', fresh);
+          prodOk++; drLog(`✓ Productos de ${j.date} actualizados`);
+        } catch (e) { prodFail++; drLog(`✗ Productos ${j.date}: ${e.message}`); if (e.kind === 'auth') break; }
+      }
     }
-    drLog(`Envío: ${ok} archivos${fail ? ', ' + fail + ' con error' : ''}`);
-    if (manual) toast(ok || fail ? `Drive: ${ok} archivos enviados${fail ? ', ' + fail + ' con error (ver Entregar)' : ' ✓'}` : 'Todo está al día en Drive ✓', 5000);
+    const left = S.d.photos.filter(needsUpload).length + S.d.audios.filter(needsUpload).length;
+    await DB.setKv('sync_last', { at: new Date().toISOString(), ok: res.ok, failed: res.failed + prodFail, left, aborted: res.aborted || null });
+    drLog(`Envío: ${res.ok} archivos${prodOk ? ' + productos de ' + prodOk + ' jornada(s)' : ''}${res.failed ? ', ' + res.failed + ' con error' : ''}${left ? ' · quedan ' + left : ''}`);
+    if (left) requestBgSync();
+    if (manual) {
+      if (res.kind === 'auth') toast('Drive: ' + res.aborted + ' · revise Ajustes → Google Drive o use Diagnóstico', 9000);
+      else if (left) toast(`Enviados ${res.ok}. Quedan ${left}: se reintentan solos${res.aborted ? ' (' + res.aborted + ')' : ''}`, 7000);
+      else toast(res.ok || prodOk ? `Drive al día ✓ · ${res.ok} archivos enviados` : 'Todo está al día en Drive ✓', 5000);
+    }
   } catch (e) { drLog('✗ ' + e.message); if (manual) toast('Drive: ' + e.message, 7000); }
-  finally { S.syncing = false; busy(false); await reload(); }
-  if (manual && S.set.drCopy && touched.size) {
+  finally { S.syncing = false; $('#syncDot').hidden = true; busy(false); await loadAll(); await reload(); }
+  if (manual && S.set.drCopy && res.touched && res.touched.length) {
     const cur = S.jor;
-    for (const j of S.d.jornadas.filter(j => touched.has(j.id))) { S.jor = j; await makePackage('jor'); }
+    for (const j of S.d.jornadas.filter(j => res.touched.includes(j.id))) { S.jor = j; await makePackage('jor'); }
     S.jor = cur;
   }
+}
+
+/* ---------------- diagnóstico de envío: un informe que se puede copiar y enviar ---------------- */
+async function runDiagnostics() {
+  const L = [], add = (ok, t) => L.push(`${ok === true ? '✅' : ok === false ? '❌' : 'ℹ️'} ${t}`);
+  busy(true, 'Diagnosticando el envío…');
+  try {
+    add(null, `Alba Field ${APP_VERSION} · ${navigator.userAgent.match(/Android [\d.]+|iPhone OS [\d_]+|Windows NT [\d.]+|Mac OS X [\d_]+/)?.[0] || ''}`);
+    add(navigator.onLine, navigator.onLine ? 'El teléfono indica que hay conexión' : 'Sin conexión de datos (el GPS y la captura funcionan igual)');
+    const c = await Drive.cfg();
+    add(!!c.url, c.url ? 'URL del receptor cargada' : 'Falta la URL del receptor');
+    add(!!Drive.folderId(c.folder), Drive.folderId(c.folder) ? 'Enlace de carpeta válido' : 'Falta o no es válido el enlace de la carpeta');
+    add(!!c.token, c.token ? 'Clave cargada' : 'Falta la clave');
+    let ver = null;
+    if (Drive.ready(c) && navigator.onLine) {
+      const t0 = performance.now();
+      try { const r = await Drive.ping(); ver = r.version || 2; add(true, `Receptor responde en ${Math.round(performance.now() - t0)} ms · carpeta "${r.root}" · versión ${ver}${ver < 4 ? ' (recomendado: 4)' : ''}`); }
+      catch (e) { add(false, `Receptor: ${e.message}`); }
+      if (ver) {
+        try {
+          const test = new Blob([new Uint8Array(200 * 1024).map((_, i) => i % 251)], { type: 'application/octet-stream' });
+          const t1 = performance.now();
+          await Drive.upload(['_DIAGNOSTICO'], `prueba_${(await DB.kv('lastJor', {}) || {}).specialist || 'ALBA'}.bin`, test, { ver: 2 });
+          const s = (performance.now() - t1) / 1000, kbps = Math.round(200 / s);
+          add(true, `Prueba de envío de 200 KB: ${s.toFixed(1)} s (~${kbps} KB/s)${kbps < 30 ? ' · señal débil: las fotos pesadas tardarán' : ''}`);
+        } catch (e) { add(false, `Prueba de envío: ${e.message}`); }
+      }
+    }
+    const pend = [...S.d.photos.filter(needsUpload), ...S.d.audios.filter(needsUpload)];
+    const sizes = await Promise.all(pend.slice(0, 60).map(async x => { const b = await DB.get('blobs', x.id); const bl = b && (b.stamped || b.audio); return bl ? bl.size : 0; }));
+    add(pend.length ? null : true, `${pend.length} archivos pendientes${pend.length ? ` · ${fmtMB(sizes.reduce((a, b) => a + b, 0))} · el más pesado ${fmtMB(Math.max(0, ...sizes))}` : ''}`);
+    const errs = [...new Set(pend.map(x => x.sync_error).filter(Boolean))];
+    errs.slice(0, 4).forEach(e => add(false, `Error registrado: ${e}`));
+    add('serviceWorker' in navigator && !!navigator.serviceWorker.controller, navigator.serviceWorker && navigator.serviceWorker.controller ? 'Funciona sin señal (app guardada en el teléfono)' : 'La app aún no está guardada para uso sin señal: ábrala una vez con señal');
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    add(null, reg && 'sync' in reg ? 'Envío en segundo plano disponible (Android/Chrome)' : 'Sin envío en segundo plano en este navegador: se envía al abrir la app');
+    add(null, `Envío automático: ${S.set.drAuto ? 'activado' : 'DESACTIVADO (actívelo en Entregar)'}`);
+    if (navigator.storage && navigator.storage.estimate) { const e = await navigator.storage.estimate(); add(null, `Espacio usado ${fmtMB(e.usage || 0)} de ${fmtMB(e.quota || 0)}`); }
+  } finally { busy(false); }
+  const txt = L.join('\n');
+  const v = await ask(`<h3>Diagnóstico de envío</h3><pre class="diag">${esc(txt)}</pre>`, [['Cerrar', false], ['Copiar informe', 'copy', 'primary']]);
+  if (v === 'copy') { try { await navigator.clipboard.writeText(txt); toast('Informe copiado: péguelo en WhatsApp o correo'); } catch (_) { prompt('Copie el informe:', txt); } }
+  renderDriveState();
 }
 
 /* ---------------- entrega: botones, consolidación, restauración ---------------- */
@@ -997,6 +1299,12 @@ function bindSend() {
   $('#btnKmz').onclick = () => singleProduct('kmz');
   $('#btnDocx').onclick = () => singleProduct('docx');
   $('#btnDrive').onclick = () => syncDrive(true);
+  $('#btnDiag').onclick = runDiagnostics;
+  $('#btnRetry').onclick = async () => {
+    for (const st of ['photos', 'audios']) for (const x of await DB.all(st)) if (x.next_try_at) { x.next_try_at = null; await DB.put(st, x); }
+    await loadAll(); syncDrive(true);
+  };
+  $('#pendBadge').onclick = () => showView('enviar');
   $('#drAuto').onchange = async e => { S.set.drAuto = e.target.checked; await DB.setKv('settings', S.set); if (S.set.drAuto) autoSync(); };
   $('#drCopy').onchange = async e => { S.set.drCopy = e.target.checked; await DB.setKv('settings', S.set); };
   $('#consIn').onchange = async e => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) await consolidate(fs); };
@@ -1020,7 +1328,7 @@ async function restore(file) {
     let data = JSON.parse(await j.async('string'));
     if (Array.isArray(data.records)) data = Exports.migrateV1(data.records, uid);
     const byBase = new Map(Object.values(zip.files).filter(f => !f.dir).map(f => [f.name.split('/').pop(), f]));
-    for (const k of ['jornadas', 'stations']) for (const o of data[k] || []) if (!(await DB.get(k, o.id))) { await DB.put(k, o); added++; } else skipped++;
+    for (const k of ['jornadas', 'stations', 'points', 'tracks']) for (const o of data[k] || []) if (!(await DB.get(k, o.id))) { await DB.put(k, o); added++; } else skipped++;
     for (const [i, p] of (data.photos || []).entries()) {
       $('#busyText').textContent = `Restaurando fotos ${i + 1}/${data.photos.length}`;
       if (await DB.get('photos', p.id)) { skipped++; continue; }
@@ -1061,6 +1369,7 @@ async function refreshTeamConfig(manual) {
   if (!navigator.onLine) { if (manual) toast('Sin señal: se usará la configuración guardada'); return; }
   const tc = await DB.kv('team_cfg');
   if (!manual && tc && Date.now() - ts(tc.at) < 6 * 3600 * 1000) return;
+  try { if ((await Drive.version()) < 3) { if (manual) toast('Su receptor de Drive es antiguo: actualícelo a la versión 4 para usar la configuración del equipo', 7000); return; } } catch (_) { return; }
   if (refreshTeamConfig._busy) return; refreshTeamConfig._busy = true;
   if (manual) busy(true, 'Descargando configuración del equipo…');
   try {
@@ -1203,7 +1512,8 @@ function bindSettings() {
     busy(true, 'Probando conexión…');
     try {
       const r = await Drive.ping(); await DB.setKv('drive_cfg', { ...(await Drive.cfg()), rootName: r.root }); busy(false);
-      if ((r.version || 2) < 3) { toast(`Conexión correcta, pero el receptor es antiguo: actualice el código del script (versión 3) para configuración y consolidado`, 9000); renderDriveState(); return; }
+      if ((r.version || 2) < 3) { toast(`Conexión correcta ✓ · las fotos se envían. Para envío por partes, configuración del equipo y consolidado, actualice el receptor a la versión 4 (guía)`, 9000); renderDriveState(); return; }
+      if (r.version < 4) toast(`Conexión correcta ✓ · receptor v${r.version}: actualícelo a v4 para envío por partes con señal débil`, 7000);
       toast(`Conexión correcta ✓ · carpeta "${r.root}"`, 4000); renderDriveState(); refreshTeamConfig(true);
     }
     catch (e) { busy(false); toast('Drive: ' + e.message, 7000); }

@@ -160,3 +160,34 @@ p.warn{color:var(--warn);font-size:13px}
 a.linkrow{display:block;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--accent);text-decoration:none;font-weight:600}
 .team{border-color:var(--accent)}
 a.filebtn{text-decoration:none}
+
+/* ---------- 2.2: mapa ---------- */
+#view-mapa.active{display:flex;flex-direction:column}
+.mapwrap{position:relative;flex:1;min-height:58vh;display:flex}
+.mapwrap #map{flex:1;min-height:58vh}
+.mapfab{position:absolute;right:10px;bottom:24px;z-index:1000;display:flex;flex-direction:column;gap:10px}
+.fab{width:52px;height:52px;border-radius:50%;padding:0;font-size:22px;background:#fff;border:1px solid var(--line);box-shadow:0 2px 8px rgba(0,0,0,.25);color:var(--forest)}
+.fab.on{background:#2563eb;color:#fff;border-color:#2563eb}
+.fab.rec{background:#d62b2b;color:#fff;border-color:#d62b2b;font-size:18px}
+.pospanel{position:absolute;left:8px;right:72px;bottom:8px;z-index:1000;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;line-height:1.35;box-shadow:0 1px 6px rgba(0,0,0,.15)}
+.pospanel small{color:var(--muted)} .pospanel b.g{color:#15803d} .pospanel b.f{color:#b45309} .pospanel b.p{color:#b91c1c}
+.trkpanel{position:absolute;left:8px;right:72px;bottom:66px;z-index:1100;background:#fff;border:2px solid #d62b2b;border-radius:10px;padding:6px 8px;display:flex;align-items:center;gap:6px;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.trkpanel span{flex:1}
+.recdot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#d62b2b;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+.me-icon{background:none;border:0}
+.me{position:relative;width:64px;height:64px}
+.me-dot{position:absolute;left:23px;top:23px;width:18px;height:18px;border-radius:50%;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.25),0 1px 4px rgba(0,0,0,.4)}
+.me-pulse{position:absolute;left:17px;top:17px;width:30px;height:30px;border-radius:50%;background:rgba(37,99,235,.35);animation:pulse 2s ease-out infinite}
+.me.weak .me-dot{background:#9ca3af} .me.weak .me-pulse{background:rgba(156,163,175,.35)}
+.me-cone{position:absolute;left:0;top:0;width:64px;height:64px;background:conic-gradient(from -28deg at 50% 50%,rgba(37,99,235,.45) 0deg,rgba(37,99,235,.45) 56deg,transparent 56deg)}
+@keyframes pulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.9);opacity:0}}
+.legend{flex-wrap:wrap}
+/* ---------- 2.2: envío ---------- */
+.badge.sync{background:#dbeafe;color:#1d4ed8}
+#pendBadge{cursor:pointer}
+.warnbox{background:#fff7e6;border:1px solid #f0c36d;border-radius:10px;padding:8px 10px;font-size:13px}
+.pendlist{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-size:13px}
+.pend{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:8px;padding:5px 8px}
+.pend small{color:var(--muted)} .pend.err{border-color:#f0c36d} .pend.err small{color:#92400e}
+pre.diag{white-space:pre-wrap;font-size:13px;line-height:1.45;background:#f6f6f2;border-radius:8px;padding:8px;max-height:52vh;overflow:auto}

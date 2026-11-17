@@ -1,7 +1,7 @@
-/* Alba Field 2 · almacenamiento local (IndexedDB). Los datos nunca salen del teléfono salvo que el usuario los envíe.
+/* Alba Field · almacenamiento local (IndexedDB). v3: + puntos y tracks del mapa. Los datos nunca salen del teléfono salvo que el usuario los envíe.
    Modelo: jornadas → stations → photos / audios. Archivos binarios en "blobs" (misma clave que la foto o el audio). */
 const DB = (() => {
-  const NAME = 'geofield', VER = 2;
+  const NAME = 'geofield', VER = 3;
   let dbp = null;
   function open() {
     if (dbp) return dbp;
@@ -9,15 +9,17 @@ const DB = (() => {
       const r = indexedDB.open(NAME, VER);
       r.onupgradeneeded = () => {
         const d = r.result;
-        for (const s of ['records', 'blobs', 'jornadas', 'stations', 'photos', 'audios'])
+        for (const s of ['records', 'blobs', 'jornadas', 'stations', 'photos', 'audios', 'points', 'tracks'])
           if (!d.objectStoreNames.contains(s)) d.createObjectStore(s, { keyPath: 'id' });
         if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv', { keyPath: 'k' });
         if (!d.objectStoreNames.contains('layers')) d.createObjectStore('layers', { keyPath: 'key' });
       };
-      r.onsuccess = () => res(r.result);
       r.onerror = () => rej(r.error);
-      r.onblocked = () => rej(new Error('Cierre otras pestañas de Alba Field y vuelva a abrir'));
+      r.onblocked = () => console.warn('Base local en uso por otra pestaña: se espera a que se libere');
+      // si otra pestaña/versión necesita actualizar la base, esta conexión se cierra para no bloquearla
+      r.onsuccess = () => { r.result.onversionchange = () => { r.result.close(); dbp = null; }; res(r.result); };
     });
+    dbp.catch(() => { dbp = null; });   // si falló (p. ej. bloqueada por otra pestaña), el próximo intento vuelve a abrir
     return dbp;
   }
   function req(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }

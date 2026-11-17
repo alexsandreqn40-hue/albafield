@@ -1,11 +1,13 @@
 /**
- * Alba Field · receptor para Google Drive (Google Apps Script) · versión 3
+ * Alba Field · receptor para Google Drive (Google Apps Script) · versión 4
  *
  * Hace tres cosas:
  *  1. Recibe fotos, audios y productos de los teléfonos y los ordena en carpetas.
  *  2. Entrega la configuración central del equipo (hoja ALBA_FIELD_CONFIG en la carpeta raíz).
  *  3. Consolida automáticamente: una Google Sheet por PROYECTO/CAMPAÑA con todas las
- *     jornadas, estaciones, fotos y audios del equipo, más una hoja AVANCE.
+ *     jornadas, estaciones, fotos, audios, puntos y tracks del equipo, más una hoja AVANCE.
+ *  4. Recibe archivos grandes por partes (señal débil): si se corta, el teléfono retoma
+ *     desde la última parte recibida.
  *
  * Instalación (una sola vez):
  *  1. Cambie CLAVE por una palabra secreta (la misma que usará el equipo).
@@ -16,7 +18,7 @@
  * Versión: Nueva versión → Implementar. Así la URL /exec no cambia.
  */
 const CLAVE = 'CAMBIE-ESTA-CLAVE';
-const VERSION = 3;
+const VERSION = 4;
 const CONFIG_NAME = 'ALBA_FIELD_CONFIG';
 
 /* Plantilla de la hoja de configuración: se crea sola la primera vez. */
@@ -49,6 +51,8 @@ function doPost(e) {
     if (b.action === 'ping') return salida({ ok: true, root: raiz.getName(), version: VERSION });
     if (b.action === 'config') return salida(leerConfig(raiz));
     if (b.action === 'consolidate') return salida(conBloqueo(function () { return consolidar(raiz, b); }));
+    if (b.action === 'chunk') return salida(recibirParte(raiz, b));
+    if (b.action === 'chunkStatus') return salida({ ok: true, have: partesRecibidas(raiz, b.uploadId) });
 
     const carpeta = conBloqueo(function () { return ruta(raiz, b.path || []); });
     if (b.action !== 'upload') return salida({ ok: true, url: carpeta.getUrl() });
@@ -110,6 +114,52 @@ function filasComoObjetos(sh) {
     .map(function (r) { const o = {}; h.forEach(function (k, i) { if (k) o[k] = r[i]; }); return o; });
 }
 
+/* ---------- envío por partes (archivos grandes con señal débil) ---------- */
+function carpetaPartes(raiz, uploadId, crear) {
+  const id = String(uploadId || '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
+  if (!id) throw new Error('Falta uploadId');
+  const it = raiz.getFoldersByName('_ALBA_TMP');
+  const tmp = it.hasNext() ? it.next() : (crear ? raiz.createFolder('_ALBA_TMP') : null);
+  if (!tmp) return null;
+  const it2 = tmp.getFoldersByName(id);
+  return it2.hasNext() ? it2.next() : (crear ? tmp.createFolder(id) : null);
+}
+function partesRecibidas(raiz, uploadId) {
+  const c = carpetaPartes(raiz, uploadId, false);
+  if (!c) return [];
+  const out = [], fs = c.getFiles();
+  while (fs.hasNext()) { const m = /^p(\d+)$/.exec(fs.next().getName()); if (m) out.push(+m[1]); }
+  return out.sort(function (a, b) { return a - b; });
+}
+/* b: uploadId, index, total, path, name, mime, data (base64 de esta parte) */
+function recibirParte(raiz, b) {
+  const tmp = conBloqueo(function () { return carpetaPartes(raiz, b.uploadId, true); });
+  const nombre = 'p' + ('0000' + b.index).slice(-4);
+  const prev = tmp.getFilesByName(nombre);
+  while (prev.hasNext()) prev.next().setTrashed(true);
+  tmp.createFile(Utilities.newBlob(Utilities.base64Decode(b.data), 'application/octet-stream', nombre));
+  const have = partesRecibidas(raiz, b.uploadId);
+  if (have.length < b.total) return { ok: true, done: false, have: have };
+  // todas las partes: se arma el archivo final en su carpeta y se borran las partes
+  return conBloqueo(function () {
+    const partes = [];
+    const fs = tmp.getFiles();
+    while (fs.hasNext()) { const f = fs.next(); const m = /^p(\d+)$/.exec(f.getName()); if (m && +m[1] < b.total) partes[+m[1]] = f; }
+    let bytes = [];
+    for (let i = 0; i < b.total; i++) {
+      if (!partes[i]) return { ok: true, done: false, have: partesRecibidas(raiz, b.uploadId) };
+      const pb = partes[i].getBlob().getBytes();
+      for (let k = 0; k < pb.length; k += 65536) Array.prototype.push.apply(bytes, Array.prototype.slice.call(pb, k, k + 65536));
+    }
+    const carpeta = ruta(raiz, b.path || []);
+    const viejos = carpeta.getFilesByName(b.name);
+    while (viejos.hasNext()) viejos.next().setTrashed(true);
+    const f = carpeta.createFile(Utilities.newBlob(bytes, b.mime || 'application/octet-stream', b.name));
+    tmp.setTrashed(true);
+    return { ok: true, done: true, id: f.getId(), url: carpeta.getUrl() };
+  });
+}
+
 /* ---------- 2. configuración central ---------- */
 function leerConfig(raiz) {
   const ss = conBloqueo(function () { return hojaDeCalculo(raiz, CONFIG_NAME, CONFIG_TEMPLATE); });
@@ -131,14 +181,14 @@ function leerConfig(raiz) {
 }
 
 /* ---------- 3. consolidación ---------- */
-/* b.project, b.campaign, b.tables = { JORNADAS: [[encabezado], [fila]…], ESTACIONES: …, FOTOS: …, AUDIOS: … } */
+/* b.project, b.campaign, b.tables = { JORNADAS: [[encabezado], [fila]…], ESTACIONES, FOTOS, AUDIOS, PUNTOS, TRACKS… } */
 function consolidar(raiz, b) {
   const P = String(b.project || '').trim(), K = String(b.campaign || '').trim();
   if (!P || !K || !b.tables) return { ok: false, error: 'Faltan proyecto, campaña o datos' };
   const carpeta = ruta(raiz, [P, K]);
   const ss = hojaDeCalculo(carpeta, 'CONSOLIDADO_' + P + '_' + K, null);
   let nuevos = 0, actualizados = 0;
-  ['JORNADAS', 'ESTACIONES', 'FOTOS', 'AUDIOS'].forEach(function (n) {
+  Object.keys(b.tables).filter(function (n) { return /^[A-Z_]{3,30}$/.test(n) && n !== 'AVANCE'; }).forEach(function (n) {
     const t = b.tables[n];
     if (!t || !t.length) return;
     let sh = ss.getSheetByName(n);

@@ -17,7 +17,7 @@ code,kbd{background:#ece7da;border-radius:5px;padding:1px 5px;font-size:.92em}
 table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left;vertical-align:top}
 th{color:var(--muted);font-weight:600}
 </style></head><body>
-<header><div><h1>Alba Field</h1><p>Registro de campo con y sin señal · guía de instalación y uso · versión 2.1.0</p></div></header>
+<header><div><h1>Alba Field</h1><p>Registro de campo con y sin señal · guía de instalación y uso · versión 2.2.0</p></div></header>
 <main>
 
 <section>
@@ -48,6 +48,29 @@ th{color:var(--muted);font-weight:600}
 <section>
 <h2>Fotos: elegir cuáles enviar</h2>
 <p>En la pestaña <b>Fotos</b> cada foto tiene un círculo ✓. Solo las marcadas se envían a Drive y entran al KMZ y a la galería Word. Las desmarcadas siguen en el teléfono y figuran en la matriz con <code>INCLUIDA_EN_PRODUCTOS = NO</code>. Botones <b>Todas</b> / <b>Ninguna</b> para el filtro actual.</p>
+</section>
+
+<section id="envio">
+<h2>Envío a Drive: cómo funciona desde la 2.2</h2>
+<ul>
+<li><b>Automático:</b> con el envío automático activado (viene así), la app envía sola al abrirla, al volver la señal y cada 2 minutos mientras haya pendientes. En Android también envía <b>en segundo plano</b> aunque cierre la app; en iPhone, al abrirla.</li>
+<li><b>Un archivo con problemas no detiene a los demás:</b> queda en la lista <b>Pendientes</b> con su motivo y se reintenta solo (1, 2, 4… hasta 30 minutos).</li>
+<li><b>Fotos pesadas con señal débil:</b> con el receptor versión 4 viajan en partes de ~1 MB; si se corta la señal, se retoma desde la última parte recibida.</li>
+<li><b>🩺 Diagnóstico de envío</b> (en Entregar): revisa conexión, receptor, clave, velocidad real y pendientes, y genera un informe para copiar y enviar a soporte.</li>
+<li>Si la clave, la carpeta o la URL están mal, el envío se detiene de inmediato con un mensaje claro (no tiene sentido reintentar).</li>
+</ul>
+</section>
+
+<section id="mapa">
+<h2>Mapa, puntos y tracks (con o sin señal)</h2>
+<ul>
+<li>El <b>GPS del equipo no necesita datos móviles</b>. Su posición se ve como un punto azul grande con su círculo de precisión y la flecha hacia donde mira el teléfono. Abajo: precisión, UTM, coordenadas y altitud en vivo.</li>
+<li><b>◎</b> centra el mapa y lo hace <b>seguir su posición</b>; si mueve el mapa con el dedo, deja de seguir hasta que lo toque de nuevo.</li>
+<li>Sin señal y sin mapa descargado se ve una cuadrícula de fondo con escala: posición, estaciones, puntos y tracks siguen visibles. Las zonas del mapa que vio con señal quedan guardadas.</li>
+<li><b>📍 Marcar punto:</b> promedia hasta 8 lecturas del GPS (quédese quieto unos segundos), luego pide nombre y nota.</li>
+<li><b>⏺ Track:</b> graba su recorrido (distancia y tiempo en vivo), con <b>Pausa</b> y <b>Terminar</b>. La pantalla se mantiene encendida mientras graba; si la app se cierra, el track continúa al abrirla. <i>Nota:</i> los navegadores no permiten registrar GPS con la pantalla apagada.</li>
+<li>Puntos y tracks salen en el KMZ, en la matriz Excel (hojas PUNTOS y TRACKS), en un archivo <b>GPX</b> (QGIS, Garmin, Google Earth) y en el consolidado del equipo.</li>
+</ul>
 </section>
 
 <section id="equipo">
@@ -81,7 +104,7 @@ th{color:var(--muted);font-weight:600}
 <li><b>Implementar → Nueva implementación</b> → tipo <b>Aplicación web</b>. <i>Ejecutar como:</i> <b>Yo</b>. <i>Quién tiene acceso:</i> <b>Cualquier usuario</b>. → Implementar.</li>
 <li>Google pedirá autorizar el acceso a su Drive: <b>Revisar permisos</b> → su cuenta → «Configuración avanzada» → «Ir a Alba Field receptor» → <b>Permitir</b>. (Aparece «app no verificada» porque el script es suyo; es normal.)</li>
 <li>Copie la <b>URL de la aplicación web</b> (termina en <code>/exec</code>).</li>
-<li><b>Si ya tenía el receptor anterior:</b> reemplace todo el código por el nuevo (mantenga su CLAVE), luego <b>Implementar → Gestionar implementaciones → ✎ editar → Versión: Nueva versión → Implementar</b>. La URL /exec no cambia. Google pedirá autorizar de nuevo (ahora también Hojas de cálculo).</li>
+<li><b>Si ya tenía un receptor anterior (para pasar a la versión 4):</b> en script.google.com abra su proyecto, seleccione todo el código (Ctrl+A), péguelo encima con el nuevo y vuelva a escribir <b>su misma CLAVE</b>. Guarde (💾). Luego <b>Implementar → Gestionar implementaciones → ✎ (lápiz) → Versión: «Nueva versión» → Implementar</b>. La URL /exec no cambia. Si Google pide autorizar de nuevo (ahora también Hojas de cálculo), acepte. Compruebe en la app: Ajustes → Probar conexión debe decir que todo está correcto, sin aviso de receptor antiguo.</li>
 <li>En el teléfono: <b>Ajustes → Google Drive</b> → pegue la URL, el enlace de la carpeta y la clave → <b>Probar conexión</b>.</li>
 </ol>
 <p class="warn">Cualquier persona con la URL <b>y</b> la clave podría subir archivos a esa carpeta. Comparta ambas solo con su equipo. Para varios evaluadores, todos usan la misma URL, carpeta y clave: cada uno queda en su subcarpeta.</p>

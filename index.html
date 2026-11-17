@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f3b2d">
+<meta name="app-version" content="2.2.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Alba Field">
@@ -19,6 +20,7 @@
   <div class="brand"><img src="icons/icon-192.png" alt=""><div><b>Alba Field</b><small id="ctxLine">Sin jornada</small></div></div>
   <div class="badges">
     <span id="netBadge" class="badge">…</span>
+    <span id="syncDot" class="badge sync" hidden>↑ enviando</span>
     <span id="pendBadge" class="badge warn" hidden>0</span>
   </div>
 </header>
@@ -128,14 +130,23 @@
 
 <!-- ============ MAPA ============ -->
 <section id="view-mapa" class="view">
-  <div id="map"></div>
+  <div class="mapwrap">
+    <div id="map"></div>
+    <div class="mapfab">
+      <button id="btnFollow" class="fab" title="Centrar y seguir mi posición" aria-label="Seguir mi posición">◎</button>
+      <button id="btnPoint" class="fab" title="Marcar punto" aria-label="Marcar punto">📍</button>
+      <button id="btnTrack" class="fab" title="Grabar track" aria-label="Grabar track">⏺</button>
+    </div>
+    <div id="trkPanel" class="trkpanel" hidden><span id="trkInfo"></span><button id="btnTrkPause" class="sm ghost">Pausa</button><button id="btnTrkStop" class="sm primary">Terminar</button></div>
+    <div id="posPanel" class="pospanel">Buscando señal GPS…</div>
+  </div>
   <div class="mapbar">
-    <button id="btnLocate" class="ghost sm">◎ Mi ubicación</button>
     <label class="filebtn sm">+ Capa KMZ/KML<input type="file" id="kmlIn" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" hidden></label>
     <label class="filebtn sm">Mapa offline ZIP<input type="file" id="tilesIn" accept=".zip,application/zip" hidden></label>
     <button id="btnLayers" class="ghost sm">Capas</button>
+    <button id="btnLocate" hidden></button>
   </div>
-  <div class="legend"><span><i style="background:#2f9e5b"></i>Evaluada</span><span><i style="background:#e9c46a"></i>Pendiente (KMZ)</span><span><i style="background:#2563eb"></i>Mis estaciones</span></div>
+  <div class="legend"><span><i style="background:#2563eb;box-shadow:0 0 0 3px #bfdbfe"></i>Yo</span><span><i style="background:#2f9e5b"></i>Evaluada</span><span><i style="background:#e9c46a"></i>Pendiente</span><span><i style="background:#2563eb"></i>Estación</span><span><i style="background:#f0781f"></i>Punto</span><span><i style="background:#d62b2b;border-radius:2px;height:4px"></i>Track</span></div>
   <div id="layerPanel" class="panel" hidden></div>
 </section>
 
@@ -145,12 +156,18 @@
   <div class="card">
     <h3>Google Drive</h3>
     <p id="drState" class="hint">No configurado. Ver Ajustes → Google Drive.</p>
+    <p id="verWarn" class="warnbox" hidden></p>
     <p class="hint">Estructura: <code>PROYECTO / CAMPAÑA / COMPONENTE / EVALUADOR / FECHA / FOTOS · AUDIOS · PRODUCTOS</code>. Se envían solo las fotos seleccionadas. La matriz Excel, el KMZ y la galería Word se regeneran en cada envío.</p>
     <div class="actions">
       <button class="big primary" id="btnDrive">☁️ Enviar ahora a Drive</button>
+      <div class="row2">
+        <button class="ghost" id="btnRetry" hidden>↻ Reintentar pendientes</button>
+        <button class="ghost" id="btnDiag">🩺 Diagnóstico de envío</button>
+      </div>
     </div>
-    <label class="check"><input type="checkbox" id="drAuto"> Enviar solo cuando haya señal (con la app abierta)</label>
+    <label class="check"><input type="checkbox" id="drAuto"> Enviar solo cuando haya señal (recomendado)</label>
     <label class="check"><input type="checkbox" id="drCopy"> Guardar también una copia ZIP en el teléfono al enviar</label>
+    <div id="pendList" class="pendlist"></div>
     <div id="drLog" class="log"></div>
     <div id="consLinks" class="consLinks"></div>
   </div>
@@ -312,6 +329,7 @@
 <script src="js/photo.js"></script>
 <script src="js/exports.js"></script>
 <script src="js/drive.js"></script>
+<script src="js/sync.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -78,6 +78,19 @@ const Exports = (() => {
       ['FECHA', a => (a.time_local || '').slice(0, 10), 11], ['HORA', a => hhmm(a.time_local), 9], ['DURACION_S', a => num(a.duration_s), 10],
       ['ARCHIVO', a => a.file_name, 40], ['ENLACE_DRIVE', a => a.drive_id ? 'https://drive.google.com/file/d/' + a.drive_id + '/view' : '', 30], ['FORMATO', a => a.mime, 18], ['ANULADO', a => a.voided ? 'SI' : 'NO', 8], ['ESTADO', statusTxt, 14],
     ],
+    PUNTOS: [
+      ['ID_PUNTO', t => t.id, 38], ['ID_JORNADA', t => t.jornada_id, 38], ['PROYECTO', t => t.project, 12], ['CAMPANA', t => t.campaign, 12], ['COMPONENTE', t => t.component, 16],
+      ['EVALUADOR_COD', t => t.specialist, 12], ['FECHA', t => (t.time_local || '').slice(0, 10), 11], ['HORA', t => hhmm(t.time_local), 9], ['NOMBRE', t => t.name, 14], ['NOTA', t => t.notes, 40],
+      ['LATITUD', t => num(t.lat), 12], ['LONGITUD', t => num(t.lon), 12], ['ALTITUD_M', t => num(r1(t.alt)), 10], ['PRECISION_M', t => num(r1(t.accuracy)), 10], ['N_LECTURAS_GPS', t => t.n_fixes, 10],
+      ['UTM_ZONA', t => t.utm_zone, 8], ['UTM_ESTE', t => num(t.utm_e), 12], ['UTM_NORTE', t => num(t.utm_n), 13], ['ANULADO', t => t.voided ? 'SI' : 'NO', 8],
+    ],
+    TRACKS: [
+      ['ID_TRACK', t => t.id, 38], ['ID_JORNADA', t => t.jornada_id, 38], ['PROYECTO', t => t.project, 12], ['CAMPANA', t => t.campaign, 12], ['COMPONENTE', t => t.component, 16],
+      ['EVALUADOR_COD', t => t.specialist, 12], ['NOMBRE', t => t.name, 14], ['NOTA', t => t.notes, 40], ['INICIO', t => t.started_local, 20], ['FIN', t => t.ended_local || '', 20],
+      ['DURACION_MIN', t => num(t.duration_s != null ? Math.round(t.duration_s / 6) / 10 : null), 11], ['DISTANCIA_M', t => num(t.distance_m != null ? Math.round(t.distance_m) : null), 11],
+      ['N_PUNTOS', t => (t.pts || []).length, 9], ['INICIO_LAT', t => num((t.pts || [])[0] && t.pts[0][0]), 12], ['INICIO_LON', t => num((t.pts || [])[0] && t.pts[0][1]), 12],
+      ['FIN_LAT', t => num((t.pts || []).length && t.pts[t.pts.length - 1][0]), 12], ['FIN_LON', t => num((t.pts || []).length && t.pts[t.pts.length - 1][1]), 12], ['ANULADO', t => t.voided ? 'SI' : 'NO', 8],
+    ],
   };
   const rowsOf = (cols, list, x) => [cols.map(c => c[0]), ...list.map(o => cols.map(c => { try { const v = c[1](o, x); return v ?? ''; } catch (_) { return ''; } }))];
   const wOf = cols => cols.map(c => c[2]);
@@ -107,7 +120,8 @@ const Exports = (() => {
   }
   /* d = {jornadas, stations, photos, audios} */
   function norm(d) {
-    return { jo: [...(d.jornadas || [])].sort(byTime), st: [...(d.stations || [])].sort(byTime), ph: [...(d.photos || [])].sort(byTime), au: [...(d.audios || [])].sort(byTime) };
+    return { jo: [...(d.jornadas || [])].sort(byTime), st: [...(d.stations || [])].sort(byTime), ph: [...(d.photos || [])].sort(byTime), au: [...(d.audios || [])].sort(byTime),
+      pt: [...(d.points || [])].sort(byTime), tr: [...(d.tracks || [])].sort(byTime) };
   }
   async function matrix(d, extra = []) {
     const x = norm(d);
@@ -116,6 +130,8 @@ const Exports = (() => {
       { name: 'ESTACIONES', rows: rowsOf(C.ESTACIONES, x.st, x), widths: wOf(C.ESTACIONES) },
       { name: 'FOTOS', rows: rowsOf(C.FOTOS, x.ph, x), widths: wOf(C.FOTOS) },
       { name: 'AUDIOS', rows: rowsOf(C.AUDIOS, x.au, x), widths: wOf(C.AUDIOS) },
+      { name: 'PUNTOS', rows: rowsOf(C.PUNTOS, x.pt, x), widths: wOf(C.PUNTOS) },
+      { name: 'TRACKS', rows: rowsOf(C.TRACKS, x.tr, x), widths: wOf(C.TRACKS) },
       { name: 'RESUMEN', rows: summaryRows(x), widths: [14, 24, 11, 9, 9] },
       { name: 'QAQC', rows: qaRows(x), widths: [10, 38, 12, 14, 17, 50] },
       ...extra,
@@ -147,7 +163,14 @@ const Exports = (() => {
       }
       folders += `<Folder><name>${esc(dmy(day))}</name>${pms}</Folder>`;
     }
-    const st = `<Style id="est"><IconStyle><color>ff4f9e2d</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>`;
+    // puntos marcados y tracks recorridos
+    const pts = x.pt.filter(t => !t.voided && t.lat != null);
+    if (pts.length) folders += `<Folder><name>Puntos marcados</name>${pts.map(t => `<Placemark><name>${esc(t.name)}</name><styleUrl>#pto</styleUrl><TimeStamp><when>${esc(t.time_utc || '')}</when></TimeStamp><description><![CDATA[<b>${esc(t.name)}</b><br/>${esc(t.notes || '')}<br/>${esc(t.specialist)} · ${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}<br/>${t.utm_zone ? esc(`${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N`) : ''} ±${t.accuracy != null ? Math.round(t.accuracy) : '?'} m]]></description><Point><coordinates>${t.lon},${t.lat}${t.alt != null ? ',' + (+t.alt).toFixed(1) : ''}</coordinates></Point></Placemark>`).join('')}</Folder>`;
+    const trs = x.tr.filter(t => !t.voided && (t.pts || []).length > 1);
+    if (trs.length) folders += `<Folder><name>Tracks</name>${trs.map(t => `<Placemark><name>${esc(t.name)}</name><styleUrl>#trk</styleUrl><description><![CDATA[<b>${esc(t.name)}</b><br/>${esc(t.notes || '')}<br/>${esc(t.specialist)} · ${esc((t.started_local || '').replace('T', ' ').slice(0, 16))} · ${Math.round(t.distance_m || 0)} m · ${Math.round((t.duration_s || 0) / 60)} min]]></description><LineString><tessellate>1</tessellate><coordinates>${t.pts.map(q => `${q[1]},${q[0]}${q[2] != null ? ',' + (+q[2]).toFixed(1) : ''}`).join(' ')}</coordinates></LineString></Placemark>`).join('')}</Folder>`;
+    const st = `<Style id="est"><IconStyle><color>ff4f9e2d</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>`
+      + `<Style id="pto"><IconStyle><color>ff1f78f0</color><scale>1.0</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/orange-circle.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>`
+      + `<Style id="trk"><LineStyle><color>ff2b2bd6</color><width>4</width></LineStyle></Style>`;
     z.file('doc.kml', `<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${esc(name)}</name>${st}${folders}</Document></kml>`);
     return z.generateAsync({ type: 'blob', compression: 'DEFLATE', mimeType: 'application/vnd.google-earth.kmz' });
   }
@@ -246,7 +269,7 @@ Rumbo: magnético aproximado según el sensor del teléfono; no reemplaza un azi
 
   /* Paquete ZIP. groups: [{path:[…], base, data:{jornadas,stations,photos,audios}}]; files(photo|audio) → blobs; products(group) → [[name, blob]] */
   async function pack(groups, { getPhoto, getAudio, products, includeOriginals, app, progress }) {
-    const z = new JSZip(), all = { jornadas: [], stations: [], photos: [], audios: [] };
+    const z = new JSZip(), all = { jornadas: [], stations: [], photos: [], audios: [], points: [], tracks: [] };
     let i = 0; const total = groups.reduce((n, g) => n + g.data.photos.length + g.data.audios.length, 0);
     for (const g of groups) {
       const dir = g.path.join('/') + '/';
@@ -258,7 +281,7 @@ Rumbo: magnético aproximado según el sensor del teléfono; no reemplaza un azi
       }
       for (const a of g.data.audios) { const b = await getAudio(a); if (b && b.audio) z.file(`${dir}AUDIOS/${a.file_name}`, b.audio, { compression: 'STORE' }); progress && progress(++i, total); }
       for (const [n, blob] of await products(g)) z.file(`${dir}PRODUCTOS/${n}`, blob, { compression: 'STORE' });
-      for (const k of Object.keys(all)) all[k].push(...g.data[k]);
+      for (const k of Object.keys(all)) all[k].push(...(g.data[k] || []));
     }
     z.file('datos.json', JSON.stringify({ schema: 'albafield/2', app, generated_utc: new Date().toISOString(), ...all }, null, 1));
     z.file('LEEME.txt', leeme({ app, counts: `${all.jornadas.length} jornadas, ${all.stations.length} estaciones, ${all.photos.length} fotos, ${all.audios.length} audios` }));
@@ -267,7 +290,7 @@ Rumbo: magnético aproximado según el sensor del teléfono; no reemplaza un azi
 
   /* Consolidación del coordinador: ZIP de Alba Field o datos*.json (versión 1 o 2) */
   async function consolidate(files, log, uid) {
-    const maps = { jornadas: new Map(), stations: new Map(), photos: new Map(), audios: new Map() }, conflicts = [], sources = [];
+    const maps = { jornadas: new Map(), stations: new Map(), photos: new Map(), audios: new Map(), points: new Map(), tracks: new Map() }, conflicts = [], sources = [];
     const strip = o => { const { uploaded_at, sync_error, send, ...rest } = o; return JSON.stringify(rest); };
     for (const f of files) {
       let data;
@@ -309,11 +332,23 @@ Rumbo: magnético aproximado según el sensor del teléfono; no reemplaza un azi
     return { blob: await out.generateAsync({ type: 'blob', compression: 'DEFLATE' }), name: `AlbaField_GENERAL_${stampNow()}.zip`, stations: d.stations.length, photos: d.photos.length, esps, conflicts: conflicts.length };
   }
 
+  /* GPX (GPS, QGIS, Garmin): puntos marcados como waypoints y tracks como trk */
+  function gpx(d, name = 'Alba Field') {
+    const x = norm(d);
+    const wpt = x.pt.filter(t => !t.voided && t.lat != null).map(t => `<wpt lat="${t.lat}" lon="${t.lon}">${t.alt != null ? `<ele>${(+t.alt).toFixed(1)}</ele>` : ''}<time>${esc(t.time_utc)}</time><name>${esc(t.name)}</name><desc>${esc(t.notes || '')}</desc></wpt>`).join('\n');
+    const trk = x.tr.filter(t => !t.voided && (t.pts || []).length > 1).map(t => `<trk><name>${esc(t.name)}</name><desc>${esc(t.notes || '')}</desc><trkseg>${t.pts.map(q => `<trkpt lat="${q[0]}" lon="${q[1]}">${q[2] != null ? `<ele>${(+q[2]).toFixed(1)}</ele>` : ''}${q[4] ? `<time>${new Date(q[4]).toISOString()}</time>` : ''}</trkpt>`).join('')}</trkseg></trk>`).join('\n');
+    if (!wpt && !trk) return null;
+    return new Blob([`<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Alba Field" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${esc(name)}</name></metadata>\n${wpt}\n${trk}\n</gpx>`], { type: 'application/gpx+xml' });
+  }
+
   /* Tablas planas (encabezado + filas) para la consolidación en Google Sheets */
   function tables(d) {
     const x = norm(d);
-    return { JORNADAS: rowsOf(C.JORNADAS, x.jo, x), ESTACIONES: rowsOf(C.ESTACIONES, x.st, x), FOTOS: rowsOf(C.FOTOS, x.ph, x), AUDIOS: rowsOf(C.AUDIOS, x.au, x) };
+    const t = { JORNADAS: rowsOf(C.JORNADAS, x.jo, x), ESTACIONES: rowsOf(C.ESTACIONES, x.st, x), FOTOS: rowsOf(C.FOTOS, x.ph, x), AUDIOS: rowsOf(C.AUDIOS, x.au, x) };
+    if (x.pt.length) t.PUNTOS = rowsOf(C.PUNTOS, x.pt, x);
+    if (x.tr.length) t.TRACKS = rowsOf(C.TRACKS, x.tr, x);
+    return t;
   }
 
-  return { xlsx, matrix, tables, kmz, gallery, pack, consolidate, migrateV1, stampNow };
+  return { xlsx, matrix, tables, gpx, kmz, gallery, pack, consolidate, migrateV1, stampNow };
 })();
