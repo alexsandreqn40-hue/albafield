@@ -23,7 +23,7 @@ const Sync = (() => {
     }
     return runLocked(opts);
   }
-  async function runLocked({ manual = false, onStep = () => {}, log = () => {} } = {}) {
+  async function runLocked({ manual = false, only = null, onStep = () => {}, log = () => {} } = {}) {
     const c = await Drive.cfg();
     if (!Drive.ready(c)) return { skipped: 'config', ok: 0, failed: 0, touched: [] };
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return { skipped: 'offline', ok: 0, failed: 0, touched: [] };
@@ -32,7 +32,9 @@ const Sync = (() => {
     catch (e) { log(`✗ ${e.message}`); return { aborted: e.message, kind: e.kind, ok: 0, failed: 0, touched: [] }; }
     const jor = new Map((await DB.all('jornadas')).map(j => [j.id, j]));
     const now = Date.now();
+    // jornadas retenidas por el usuario (para revisar antes de enviar) no salen; "only" = enviar solo una jornada
     const items = (await pending())
+      .filter(([, x]) => { const j = jor.get(x.jornada_id); return j && (only ? x.jornada_id === only : !j.hold); })
       .filter(([, x]) => manual || !x.next_try_at || ts(x.next_try_at) <= now)
       .sort((a, b) => (a[1].fail_count || 0) - (b[1].fail_count || 0) || (a[1].time_utc || '').localeCompare(b[1].time_utc || ''));
     let ok = 0, failed = 0, consec = 0, aborted = null, kind = null;
@@ -75,7 +77,7 @@ const Sync = (() => {
       if (err.kind === 'net' && ++consec >= 3) { aborted = 'La señal no alcanza por ahora: se continuará cuando mejore'; kind = 'net'; break; }
       if (err.kind !== 'net') consec = 0;
     }
-    const left = (await pending()).length;
+    const left = (await pending()).filter(([, x]) => { const j = jor.get(x.jornada_id); return j && !j.hold; }).length;
     return { ok, failed, aborted, kind, touched: [...touched], ver, left };
   }
   return { run, pending, needs, jorPath, safeName };

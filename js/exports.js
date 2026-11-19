@@ -81,7 +81,7 @@ const Exports = (() => {
     PUNTOS: [
       ['ID_PUNTO', t => t.id, 38], ['ID_JORNADA', t => t.jornada_id, 38], ['PROYECTO', t => t.project, 12], ['CAMPANA', t => t.campaign, 12], ['COMPONENTE', t => t.component, 16],
       ['EVALUADOR_COD', t => t.specialist, 12], ['FECHA', t => (t.time_local || '').slice(0, 10), 11], ['HORA', t => hhmm(t.time_local), 9], ['NOMBRE', t => t.name, 14], ['NOTA', t => t.notes, 40],
-      ['LATITUD', t => num(t.lat), 12], ['LONGITUD', t => num(t.lon), 12], ['ALTITUD_M', t => num(r1(t.alt)), 10], ['PRECISION_M', t => num(r1(t.accuracy)), 10], ['N_LECTURAS_GPS', t => t.n_fixes, 10],
+      ['LATITUD', t => num(t.lat), 12], ['LONGITUD', t => num(t.lon), 12], ['ALTITUD_M', t => num(r1(t.alt)), 10], ['PRECISION_M', t => num(r1(t.accuracy)), 10], ['N_LECTURAS_GPS', t => t.n_fixes, 10], ['METODO', t => t.method === 'mapa' ? 'MAPA' : 'GPS', 8],
       ['UTM_ZONA', t => t.utm_zone, 8], ['UTM_ESTE', t => num(t.utm_e), 12], ['UTM_NORTE', t => num(t.utm_n), 13], ['ANULADO', t => t.voided ? 'SI' : 'NO', 8],
     ],
     TRACKS: [
@@ -165,7 +165,7 @@ const Exports = (() => {
     }
     // puntos marcados y tracks recorridos
     const pts = x.pt.filter(t => !t.voided && t.lat != null);
-    if (pts.length) folders += `<Folder><name>Puntos marcados</name>${pts.map(t => `<Placemark><name>${esc(t.name)}</name><styleUrl>#pto</styleUrl><TimeStamp><when>${esc(t.time_utc || '')}</when></TimeStamp><description><![CDATA[<b>${esc(t.name)}</b><br/>${esc(t.notes || '')}<br/>${esc(t.specialist)} · ${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}<br/>${t.utm_zone ? esc(`${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N`) : ''} ±${t.accuracy != null ? Math.round(t.accuracy) : '?'} m]]></description><Point><coordinates>${t.lon},${t.lat}${t.alt != null ? ',' + (+t.alt).toFixed(1) : ''}</coordinates></Point></Placemark>`).join('')}</Folder>`;
+    if (pts.length) folders += `<Folder><name>Puntos marcados</name>${pts.map(t => `<Placemark><name>${esc(t.name)}</name><styleUrl>#pto</styleUrl><TimeStamp><when>${esc(t.time_utc || '')}</when></TimeStamp><description><![CDATA[<b>${esc(t.name)}</b><br/>${esc(t.notes || '')}<br/>${esc(t.specialist)} · ${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}<br/>${t.utm_zone ? esc(`${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N`) : ''} ${t.method === 'mapa' ? '(ubicado en el mapa)' : '±' + (t.accuracy != null ? Math.round(t.accuracy) : '?') + ' m'}]]></description><Point><coordinates>${t.lon},${t.lat}${t.alt != null ? ',' + (+t.alt).toFixed(1) : ''}</coordinates></Point></Placemark>`).join('')}</Folder>`;
     const trs = x.tr.filter(t => !t.voided && (t.pts || []).length > 1);
     if (trs.length) folders += `<Folder><name>Tracks</name>${trs.map(t => `<Placemark><name>${esc(t.name)}</name><styleUrl>#trk</styleUrl><description><![CDATA[<b>${esc(t.name)}</b><br/>${esc(t.notes || '')}<br/>${esc(t.specialist)} · ${esc((t.started_local || '').replace('T', ' ').slice(0, 16))} · ${Math.round(t.distance_m || 0)} m · ${Math.round((t.duration_s || 0) / 60)} min]]></description><LineString><tessellate>1</tessellate><coordinates>${t.pts.map(q => `${q[1]},${q[0]}${q[2] != null ? ',' + (+q[2]).toFixed(1) : ''}`).join(' ')}</coordinates></LineString></Placemark>`).join('')}</Folder>`;
     const st = `<Style id="est"><IconStyle><color>ff4f9e2d</color><scale>1.1</scale><Icon><href>http://maps.google.com/mapfiles/kml/paddle/grn-circle.png</href></Icon></IconStyle><LabelStyle><scale>0.8</scale></LabelStyle></Style>`

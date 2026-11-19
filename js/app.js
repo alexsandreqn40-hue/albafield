@@ -1,5 +1,5 @@
 /* Alba Field 2 · aplicación de campo offline (PWA): Jornada → Estación → Fotos + notas de voz. */
-const APP_VERSION = '2.2.0';
+const APP_VERSION = '2.3.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const CODE_RE = /^[A-Za-z0-9_\-]{1,32}$/;
@@ -108,8 +108,9 @@ async function init() {
   startGps(); startCompass();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist().catch(() => {}); });
   setInterval(autoSync, 120000); setTimeout(autoSync, 4000);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { setTimeout(autoSync, 1500); if (S.trk) Track.wake(); if (!S.fix || Date.now() - S.fix.got > 20000) startGps(); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { setTimeout(autoSync, 1500); setTimeout(checkJorDate, 800); if (S.trk) Track.wake(); if (!S.fix || Date.now() - S.fix.got > 20000) startGps(); } });
   Track.resume();
+  setTimeout(checkJorDate, 1200);
 }
 
 /* Registros 1.x (1 foto = 1 registro) → jornadas, estaciones y fotos. Las fotos conservan su ID y sus archivos. */
@@ -149,7 +150,7 @@ async function reload() {
   const pend = S.d.photos.filter(needsUpload).length + S.d.audios.filter(needsUpload).length;
   $('#pendBadge').hidden = !pend; $('#pendBadge').textContent = `${pend} por enviar`;
   $('#ctxLine').textContent = S.jor ? `${S.jor.specialist} · ${S.jor.project}/${S.jor.campaign} · ${dmy(S.jor.date)}` : 'Sin jornada activa';
-  await renderCampo(); renderFotos(); renderSendInfo(); renderDriveState();
+  await renderCampo(); renderFotos(); renderSendInfo(); renderDriveState(); renderJorList();
   if (S.map) renderMapData();
 }
 function netBadge() { const b = $('#netBadge'); b.textContent = navigator.onLine ? 'Con señal' : 'Sin señal'; b.className = 'badge ' + (navigator.onLine ? 'on' : 'off'); }
@@ -159,7 +160,7 @@ function showView(v) {
   $$('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   if (v === 'mapa') setTimeout(initMap, 30);
-  if (v === 'enviar') { renderSendInfo(); renderDriveState(); }
+  if (v === 'enviar') { renderSendInfo(); renderDriveState(); renderJorList(); }
   if (v === 'fotos') renderFotos();
   if (v === 'ajustes') { renderStorage(); loadProjectSettings(); }
   $('main').scrollTop = 0;
@@ -215,9 +216,6 @@ async function renderJornadaStep() {
   }
   f.querySelector('button[type=submit]').textContent = S.jor ? 'Continuar con estaciones →' : 'Siguiente: estaciones →';
   await fillJornadaLists();
-  const js = [...S.d.jornadas].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at)).slice(0, 12);
-  $('#jorList').innerHTML = js.length ? js.map(j => { const n = stationsOf(j.id).filter(s => !s.voided).length; return `<div class="stRow ${S.jor && S.jor.id === j.id ? 'cur' : ''}" data-id="${j.id}"><div><div class="t">${esc(j.project)} · ${esc(j.campaign)} · ${dmy(j.date)}</div><div class="s">${esc(j.component)} · ${esc(j.specialist)} · ${n} estaciones${j.closed_at ? ' · cerrada' : ' · abierta'}</div></div></div>`; }).join('') : '<p class="hint">Sin jornadas todavía.</p>';
-  $('#jorList').querySelectorAll('.stRow').forEach(el => el.onclick = () => activateJornada(S.d.jornadas.find(j => j.id === el.dataset.id)));
 }
 async function activateJornada(j) {
   if (!j) return;
@@ -259,6 +257,7 @@ function bindCampo() {
     await DB.put('jornadas', j); S.d.jornadas.push(j);
     activateJornada(j);
   };
+  $('#lnkMyJor').onclick = e => { e.preventDefault(); showView('enviar'); setTimeout(() => $('#jorList').scrollIntoView({ block: 'start' }), 50); };
   $('#stepBack').onclick = () => { renderCampo._editJor = true; renderJornadaStep._filled = false; renderCampo(); };
   const fe = $('#formEstacion');
   fe.addEventListener('input', () => { readStationForm(); if (S.stPersisted) { clearTimeout(bindCampo._t); bindCampo._t = setTimeout(() => saveStationDraft(), 800); } renderStationBadge(); });
@@ -308,14 +307,14 @@ async function closeJornada() {
   if (S.stPersisted || hasStationContent()) { const ok = await saveStation(true); if (!ok) return; }
   const j = S.jor; const n = stationsOf(j.id).filter(s => !s.voided).length;
   const pend = S.d.photos.filter(p => p.jornada_id === j.id && needsUpload(p)).length;
-  const ok = await ask(`<h3>Cerrar jornada</h3><p>${esc(j.project)}/${esc(j.campaign)} · ${dmy(j.date)} · ${n} estaciones.</p>${pend ? `<p>${pend} fotos aún no están en Drive. Quedan guardadas en el teléfono.</p>` : ''}<p>Podrá reabrirla desde "Jornadas recientes".</p>`, [['Cancelar', false], ['Cerrar jornada', true]]);
+  const ok = await ask(`<h3>Cerrar jornada</h3><p>${esc(j.project)}/${esc(j.campaign)} · ${dmy(j.date)} · ${n} estaciones.</p>${pend ? `<p>${pend} fotos aún no están en Drive. Quedan guardadas en el teléfono.</p>` : ''}<p>Podrá reabrirla, editarla o borrarla desde <b>Entregar → Mis jornadas</b>.</p>`, [['Cancelar', false], ['Cerrar jornada', true]]);
   if (!ok) return;
   j.closed_at = new Date().toISOString(); await DB.put('jornadas', j);
   S.jor = null; S.st = null; S.stPersisted = false; await DB.setKv('activeJor', null); await DB.setKv('activeSt', null);
   renderJornadaStep._filled = false; renderCampo._editJor = false;
   await reload();
   const c = await Drive.cfg();
-  if (Drive.ready(c) && navigator.onLine && pend) { if (await ask('<p>¿Enviar ahora la jornada a Google Drive?</p>', [['Después', false], ['Enviar', true]])) syncDrive(true); }
+  if (Drive.ready(c) && navigator.onLine && !j.hold && (pend || jornadaDirty(j) || galleryStale(j))) { if (await ask('<p>¿Enviar ahora la jornada a Google Drive? (fotos, audios, matriz, KMZ y galería Word)</p>', [['Después', false], ['Enviar', true]])) syncDrive(true, j.id); else setTimeout(autoSync, 3000); }
   else toast('Jornada cerrada ✓');
 }
 
@@ -804,7 +803,11 @@ function bindMap() {
   $('#tilesIn').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) await importTiles(f); };
   $('#btnLayers').onclick = () => { const p = $('#layerPanel'); p.hidden = !p.hidden; renderLayerPanel(); };
   // botones dentro de los globos del mapa (eliminar punto o track)
-  $('#map').addEventListener('click', e => { const b = e.target.closest('[data-delpt],[data-deltr]'); if (b) { e.preventDefault(); b.dataset.delpt ? deletePoint(b.dataset.delpt) : deleteTrack(b.dataset.deltr); } });
+  $('#map').addEventListener('click', e => {
+    const b = e.target.closest('[data-delpt],[data-deltr],[data-editpt],[data-movept]'); if (!b) return;
+    e.preventDefault(); e.stopPropagation(); const d = b.dataset;
+    if (d.delpt) deletePoint(d.delpt); else if (d.deltr) deleteTrack(d.deltr); else if (d.editpt) editPoint(d.editpt); else editPoint(d.movept, true);
+  });
 }
 /* Cuadrícula de fondo: sin señal y sin mapa descargado el mapa no queda en gris, se ven posición, puntos y tracks */
 const GridLayer = L.GridLayer.extend({
@@ -868,8 +871,9 @@ function renderMapData(fit) {
     const st = f.style || {};
     const pop = `<b>${esc(f.name)}</b><br><small>${esc(l.name)}</small>${f.desc ? '<br>' + esc(f.desc) : ''}`;
     if (f.type === 'Point') { const ok = done.has(up(f.name)); L.circleMarker(f.coords[0], { radius: 7, color: ok ? '#1b5e20' : '#1f3b2d', weight: 2, fillColor: ok ? '#2f9e5b' : (st.icon || '#e9c46a'), fillOpacity: 1 }).bindPopup(pop + (ok ? '<br>✓ evaluada' : '<br>pendiente')).bindTooltip(f.name).addTo(g); }
-    else if (f.type === 'LineString') L.polyline(f.coords, { color: st.line || '#d17a22', opacity: st.lineA ?? 1, weight: st.width || 3 }).bindPopup(pop).addTo(g);
-    else L.polygon([f.coords, ...(f.holes || [])], { color: st.line || '#2d6a4f', weight: st.noOutline ? 0 : (st.width || 2), fillColor: st.fill || st.line || '#2d6a4f', fillOpacity: st.fillA != null ? Math.min(st.fillA, 0.6) : 0.15 }).bindPopup(pop).addTo(g);
+    else if (f.type === 'LineString') L.polyline(f.coords, { color: st.line || '#d17a22', opacity: st.lineA ?? 1, weight: st.width || 3 }).bindPopup(() => pop + `<div class="measure">📏 Longitud: <b>${Geo.fmtLen(Geo.lineLength(f.coords))}</b></div>`).addTo(g);
+    else L.polygon([f.coords, ...(f.holes || [])], { color: st.line || '#2d6a4f', weight: st.noOutline ? 0 : (st.width || 2), fillColor: st.fill || st.line || '#2d6a4f', fillOpacity: st.fillA != null ? Math.min(st.fillA, 0.6) : 0.15 })
+      .bindPopup(() => { const i = Geo.polygonInfo(f.coords, f.holes || []); return pop + `<div class="measure">▱ Área: <b>${Geo.fmtArea(i.area)}</b><br>↺ Perímetro: <b>${Geo.fmtLen(i.perimeter)}</b><br><small>UTM WGS84 zona ${i.zone}${i.holes ? ` · ${i.holes} hueco(s) descontado(s)` : ''}</small></div>`; }).addTo(g);
   }
   for (const s of S.d.stations.filter(s => !s.voided && s.lat != null && (!P || s.project === P))) {
     const mk = L.circleMarker([s.lat, s.lon], { radius: 8, color: '#fff', weight: 2, fillColor: '#2563eb', fillOpacity: 1 }).addTo(g);
@@ -878,10 +882,10 @@ function renderMapData(fit) {
   }
   // tracks y puntos marcados
   for (const t of S.d.tracks.filter(t => !t.voided && (!P || t.project === P) && (t.pts || []).length > 1 && (!S.trk || t.id !== S.trk.id))) {
-    L.polyline(t.pts.map(q => [q[0], q[1]]), { color: '#d62b2b', weight: 4, opacity: 0.85 }).bindPopup(`<b>${esc(t.name)}</b> · ${Math.round(t.distance_m || 0)} m · ${Math.round((t.duration_s || 0) / 60)} min<br><small>${esc(t.specialist)} · ${esc((t.started_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm danger" data-deltr="${t.id}">Eliminar track</button>`).addTo(g);
+    L.polyline(t.pts.map(q => [q[0], q[1]]), { color: '#d62b2b', weight: 4, opacity: 0.85 }).bindPopup(`<b>${esc(t.name)}</b> · ${Geo.fmtLen(t.distance_m || 0)} · ${Math.round((t.duration_s || 0) / 60)} min<br><small>${esc(t.specialist)} · ${esc((t.started_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm danger" data-deltr="${t.id}">Eliminar track</button>`).addTo(g);
   }
   for (const t of S.d.points.filter(t => !t.voided && (!P || t.project === P))) {
-    L.circleMarker([t.lat, t.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#f0781f', fillOpacity: 1 }).bindTooltip(t.name).bindPopup(`<b>${esc(t.name)}</b> · ±${Math.round(t.accuracy || 0)} m<br><small>${t.utm_zone ? `${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N<br>` : ''}${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm danger" data-delpt="${t.id}">Eliminar punto</button>`).addTo(g);
+    L.circleMarker([t.lat, t.lon], { radius: 7, color: t.method === 'mapa' ? '#7c2d12' : '#fff', weight: 2, dashArray: t.method === 'mapa' ? '3 2' : null, fillColor: '#f0781f', fillOpacity: 1 }).bindTooltip(t.name).bindPopup(`<b>${esc(t.name)}</b> · ${t.method === 'mapa' ? 'ubicado en el mapa' : '±' + Math.round(t.accuracy || 0) + ' m (GPS)'}<br><small>${t.utm_zone ? `${t.utm_zone} ${Math.round(t.utm_e)} E / ${Math.round(t.utm_n)} N<br>` : ''}${esc((t.time_local || '').replace('T', ' ').slice(0, 16))}${t.notes ? '<br>' + esc(t.notes) : ''}</small><br><button class="sm ghost" data-editpt="${t.id}">✏️ Editar</button> <button class="sm ghost" data-movept="${t.id}">✥ Mover</button> <button class="sm danger" data-delpt="${t.id}">Eliminar</button>`).addTo(g);
   }
   if (S.trk) { S.trkLine = L.polyline(S.trk.pts.map(q => [q[0], q[1]]), { color: '#d62b2b', weight: 5, dashArray: S.trk.status === 'paused' ? '6 8' : null }).addTo(g); }
   if (fit && g.getLayers().length) { try { m.fitBounds(g.getBounds().pad(0.2), { maxZoom: 16 }); } catch (_) {} }
@@ -895,9 +899,20 @@ function needJornada() {
   return false;
 }
 async function markPoint() {
-  if (!needJornada()) return;
-  if (!S.fix) { toast('Esperando señal GPS del equipo… salga a cielo abierto'); return; }
-  // se promedian las lecturas de hasta 10 s (o 8 lecturas) ponderadas por precisión
+  if (!needJornada() || S.picking) return;
+  const off = !navigator.onLine;
+  const how = await ask(`<h3>📍 Marcar punto</h3><p>¿Dónde va el punto?</p>`
+    + (S.fix ? `<p class="hint">GPS del equipo: ±${Math.round(S.fix.acc)} m${off ? ' · sin datos móviles: el GPS funciona igual' : ''}</p>` : `<p class="hint">Aún no hay posición GPS${off ? ' (sin datos móviles el primer posicionamiento puede tardar 1–3 min a cielo abierto)' : ''}. Puede ubicar el punto en el mapa.</p>`)
+    + '<p class="hint"><b>Mi posición GPS</b>: promedia varias lecturas donde usted está.<br><b>Elegir en el mapa</b>: mueva el mapa hasta que la cruz quede sobre el lugar (ej. un nido al otro lado de la quebrada).</p>',
+    [['Cancelar', false], ['👆 Elegir en el mapa', 'map'], ...(S.fix ? [['📡 Mi posición GPS', 'gps', 'primary']] : [])]);
+  if (!how) return;
+  if (how === 'gps') { const g = await averageGps(); if (g) await savePoint(g); return; }
+  const ll = await pickOnMap(null, 'Mueva el mapa (o toque) hasta poner la cruz sobre el lugar del punto');
+  if (ll) await savePoint({ lat: ll.lat, lon: ll.lng, alt: null, accuracy: null, n_fixes: 0, method: 'mapa' });
+}
+/* se promedian las lecturas de hasta 10 s (u 8 lecturas) ponderadas por precisión */
+async function averageGps() {
+  if (!S.fix) { toast('Esperando señal GPS del equipo… salga a cielo abierto'); return null; }
   const fixes = [S.fix];
   busy(true, 'Promediando GPS… quédese quieto');
   await new Promise(res => {
@@ -912,23 +927,69 @@ async function markPoint() {
   const w = good.map(x => 1 / Math.max(1, x.acc) ** 2), W = w.reduce((a, b) => a + b, 0);
   const lat = good.reduce((a, x, i) => a + x.lat * w[i], 0) / W, lon = good.reduce((a, x, i) => a + x.lon * w[i], 0) / W;
   const alts = good.filter(x => x.alt != null).map(x => x.alt), acc = Math.min(...good.map(x => x.acc)) / Math.sqrt(Math.min(good.length, 4));
-  const n = S.d.points.filter(t => t.jornada_id === S.jor.id).length + 1, def = `P-${String(n).padStart(3, '0')}`;
-  const u = Geo.toUTM(lat, lon);
-  const ok = await ask(`<h3>📍 Marcar punto</h3><p class="hint">${good.length} lecturas · ±${Math.round(acc)} m · UTM ${u.zone} ${Math.round(u.e)} E ${Math.round(u.n)} N</p><label>Nombre<input id="ptName" value="${def}" autocapitalize="characters"></label><label>Nota<textarea id="ptNote" rows="2" placeholder="ej. Nido, cruce de quebrada, acceso"></textarea></label>`, [['Cancelar', false], ['Guardar punto', true]]);
+  return { lat, lon, alt: alts.length ? alts.reduce((a, b) => a + b, 0) / alts.length : null, accuracy: Math.round(acc * 10) / 10, n_fixes: good.length, method: 'gps' };
+}
+/* Elegir una ubicación en el mapa: cruz fija al centro; se mueve el mapa o se toca el lugar. Devuelve LatLng o null. */
+function pickOnMap(start, msg) {
+  const m = S.map; if (!m) return Promise.resolve(null);
+  return new Promise(res => {
+    S.picking = true; S.follow = false; $('#btnFollow').classList.remove('on'); m.closePopup();
+    if (start) m.setView(start, Math.max(m.getZoom(), 18));
+    else if (m.getZoom() < 16 && S.fix) m.setView([S.fix.lat, S.fix.lon], 17);
+    $('#pickCross').hidden = false; $('#pickBar').hidden = false; $('#posPanel').hidden = true; $('.mapfab').hidden = true;
+    const info = () => {
+      const c = m.getCenter(), u = Geo.toUTM(c.lat, c.lng);
+      const d = S.fix ? Geo.dist(S.fix.lat, S.fix.lon, c.lat, c.lng) : null;
+      $('#pickInfo').innerHTML = `<b>${esc(msg)}</b><br>UTM ${u.zone} <b>${Math.round(u.e)}</b> E <b>${Math.round(u.n)}</b> N · ${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}${d != null ? `<br><small>a ${Geo.fmtLen(d)} de su posición GPS</small>` : ''}`;
+    };
+    const tap = e => m.panTo(e.latlng);
+    const pop = () => { if (S.picking) m.closePopup(); };
+    const end = v => { m.off('move', info); m.off('click', tap); m.off('popupopen', pop); S.picking = false; $('#pickCross').hidden = true; $('#pickBar').hidden = true; $('#posPanel').hidden = false; $('.mapfab').hidden = false; res(v); };
+    m.on('move', info); m.on('click', tap); m.on('popupopen', pop); info();
+    $('#btnPickOk').onclick = () => end(m.getCenter());
+    $('#btnPickCancel').onclick = () => end(null);
+  });
+}
+async function savePoint(g, existing) {
+  const u = Geo.toUTM(g.lat, g.lon);
+  const n = S.d.points.filter(t => t.jornada_id === S.jor.id).length + 1, def = existing ? existing.name : `P-${String(n).padStart(3, '0')}`;
+  const src = g.method === 'mapa' ? 'Ubicado en el mapa' : `GPS · ${g.n_fixes} lecturas · ±${Math.round(g.accuracy)} m`;
+  const ok = await ask(`<h3>📍 ${existing ? 'Editar' : 'Guardar'} punto</h3><p class="hint">${src} · UTM ${u.zone} ${Math.round(u.e)} E ${Math.round(u.n)} N</p><label>Nombre<input id="ptName" value="${esc(def)}" autocapitalize="characters"></label><label>Nota<textarea id="ptNote" rows="2" placeholder="ej. Nido, cruce de quebrada, acceso">${esc(existing ? existing.notes : '')}</textarea></label>`, [['Cancelar', false], ['Guardar punto', true]]);
   const name = up(($('#ptName') || {}).value || def) || def, notes = (($('#ptNote') || {}).value || '').trim();
-  if (!ok) return;
+  if (!ok) return null;
   const now = new Date(), j = S.jor;
-  const t = { id: uid(), jornada_id: j.id, project: j.project, campaign: j.campaign, component: j.component, specialist: j.specialist, person: j.person, date: j.date, name, notes,
-    lat, lon, alt: alts.length ? alts.reduce((a, b) => a + b, 0) / alts.length : null, accuracy: Math.round(acc * 10) / 10, n_fixes: good.length,
-    utm_zone: u.zone, utm_e: u.e, utm_n: u.n, time_local: localIso(now), time_utc: now.toISOString(), created_at: now.toISOString(), app_version: APP_VERSION };
-  await DB.put('points', t); S.d.points.push(t);
+  const geo = { lat: g.lat, lon: g.lon, alt: g.alt, accuracy: g.accuracy, n_fixes: g.n_fixes, method: g.method, utm_zone: u.zone, utm_e: u.e, utm_n: u.n };
+  let t;
+  if (existing) { t = Object.assign(existing, geo, { name, notes, edited_at: now.toISOString() }); }
+  else {
+    t = { id: uid(), jornada_id: j.id, project: j.project, campaign: j.campaign, component: j.component, specialist: j.specialist, person: j.person, date: j.date, name, notes,
+      ...geo, time_local: localIso(now), time_utc: now.toISOString(), created_at: now.toISOString(), app_version: APP_VERSION };
+    S.d.points.push(t);
+  }
+  await DB.put('points', t); if (existing) await touchJornada(t.jornada_id);
   renderMapData(); toast(`Punto ${name} guardado ✓`);
   clearTimeout(markPoint._t); markPoint._t = setTimeout(autoSync, 8000);
+  return t;
+}
+async function editPoint(id, move) {
+  const t = S.d.points.find(x => x.id === id); if (!t) return;
+  S.map && S.map.closePopup();
+  let g = { lat: t.lat, lon: t.lon, alt: t.alt, accuracy: t.accuracy, n_fixes: t.n_fixes, method: t.method || 'gps' };
+  if (move) {
+    const ll = await pickOnMap([t.lat, t.lon], `Mueva el mapa para reubicar ${t.name}`);
+    if (!ll) return;
+    g = { lat: ll.lat, lon: ll.lng, alt: null, accuracy: null, n_fixes: 0, method: 'mapa' };
+  }
+  const jcur = S.jor; S.jor = S.d.jornadas.find(j => j.id === t.jornada_id) || jcur;
+  try { await savePoint(g, t); } finally { S.jor = jcur; }
 }
 async function deletePoint(id) {
   const t = S.d.points.find(x => x.id === id); if (!t) return;
-  if (!(await ask(`<p>¿Eliminar el punto <b>${esc(t.name)}</b>? No se puede deshacer.</p>`, [['Cancelar', false], ['Eliminar', true, 'danger']]))) return;
-  await DB.del('points', id); S.d.points = S.d.points.filter(x => x.id !== id);
+  if (!(await ask(`<p>¿Eliminar el punto <b>${esc(t.name)}</b>?</p>`, [['Cancelar', false], ['Eliminar', true, 'danger']]))) return;
+  // si ya llegó a Drive queda como ANULADO (así también se marca en el consolidado); si no, se borra
+  const j = S.d.jornadas.find(x => x.id === t.jornada_id);
+  if (j && j.products_at && ts(j.products_at) > ts(t.created_at)) { t.voided = true; t.edited_at = new Date().toISOString(); await DB.put('points', t); }
+  else { await DB.del('points', id); S.d.points = S.d.points.filter(x => x.id !== id); }
   await touchJornada(t.jornada_id); S.map && S.map.closePopup(); renderMapData(); toast('Punto eliminado');
 }
 async function deleteTrack(id) {
@@ -1075,13 +1136,13 @@ async function galleryImage(p) {
   return { blob, w: im.naturalWidth, h: im.naturalHeight };
 }
 const kmzThumb = async p => (await DB.get('blobs', p.id) || {}).thumb;
-async function productsOf(j, progress) {
+async function productsOf(j, progress, { gallery = true } = {}) {
   const d = dataOfJor(j), base = jorBase(j), out = [];
   progress && progress('Matriz Excel…');
   out.push([`${base}_MATRIZ.xlsx`, await Exports.matrix(d)]);
   progress && progress('KMZ de fotos…');
   out.push([`${base}_FOTOS.kmz`, await Exports.kmz(d, kmzThumb, `${j.project} ${j.campaign} · ${j.specialist} · ${dmy(j.date)}`)]);
-  if (d.photos.some(p => !p.voided && p.send !== false)) {
+  if (gallery && d.photos.some(p => !p.voided && p.send !== false)) {
     out.push([`${base}_GALERIA.docx`, await Exports.gallery(d, galleryImage, { title: 'Galería fotográfica', subtitle: `${j.project} · ${j.campaign} · ${j.component} · ${j.person || j.specialist} · ${dmy(j.date)}`, header: `${j.project} · ${j.campaign} — Galería fotográfica` }, (i, n) => progress && progress(`Galería Word ${i}/${n}…`))]);
   }
   const g = Exports.gpx(d, `${j.project} ${j.campaign} · ${j.specialist} · ${dmy(j.date)}`);
@@ -1138,6 +1199,120 @@ async function singleProduct(kind) {
   } catch (e) { busy(false); toast(e.message, 6000); }
 }
 
+/* ---------------- ENTREGAR · mis jornadas: estado, editar, retener, enviar y borrar ---------------- */
+/* Firma de lo que entra en la galería Word: si no cambió, no se vuelve a generar ni a subir (pesa varios MB) */
+function gallerySig(j) {
+  const ph = S.d.photos.filter(p => p.jornada_id === j.id && !p.voided && p.send !== false).map(p => [p.id, p.edited_at || p.time_utc, p.caption || ''].join('~')).sort();
+  const st = S.d.stations.filter(s => s.jornada_id === j.id && !s.voided).map(s => [s.id, s.station, s.place, s.notes, s.edited_at || ''].join('~')).sort();
+  if (!ph.length) return '';
+  let h = 0; const str = ph.join('|') + '#' + st.join('|') + '#' + [j.project, j.campaign, j.component, j.person, j.date].join('|');
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return ph.length + ':' + (h >>> 0).toString(36);
+}
+const galleryStale = j => { const g = gallerySig(j); return !!g && g !== j.gallery_sig; };
+function jorInfo(j) {
+  const mine = arr => arr.filter(x => x.jornada_id === j.id && !x.voided);
+  const ph = mine(S.d.photos), au = mine(S.d.audios), sts = mine(S.d.stations), pts = mine(S.d.points), trs = mine(S.d.tracks).filter(t => t.status !== 'rec');
+  const pend = [...ph, ...au].filter(needsUpload), err = pend.filter(x => x.sync_error).length;
+  const empty = !sts.length && !ph.length && !pts.length && !trs.length;
+  const dirty = jornadaDirty(j), gal = galleryStale(j);
+  const active = !!(S.jor && S.jor.id === j.id), rec = !!(S.trk && S.trk.jornada_id === j.id);
+  let state = empty ? 'empty' : j.hold ? 'hold' : err ? 'err' : pend.length || dirty || gal ? 'pend' : 'sent';
+  if (state === 'sent' && !j.products_at) state = 'pend';
+  return { ph, au, sts, pts, trs, pend, err, empty, dirty, gal, active, rec, state };
+}
+function jorStateHtml(j, i) {
+  const what = [];
+  if (i.pend.length) what.push(`${i.pend.length} fotos/audios por enviar`);
+  if (!i.pend.length && i.dirty) what.push('matriz y KMZ por actualizar');
+  if (i.gal) what.push('galería Word por generar');
+  const chip = {
+    empty: '<span class="st hold">Sin datos</span>',
+    hold: `<span class="st hold">⏸ Retenida: no se envía${what.length ? ' · ' + what.join(' · ') : ''}</span>`,
+    err: `<span class="st err">⚠ ${i.err} con error · ${what.join(' · ')}</span>`,
+    pend: `<span class="st pend">⏳ ${what.join(' · ') || 'por enviar'}</span>`,
+    sent: `<span class="st sent">✓ Completa en Drive${j.products_at ? ' · ' + new Date(j.products_at).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</span>`,
+  }[i.state];
+  return chip + (i.active ? ' <span class="st open">En uso en Campo</span>' : '');
+}
+function renderJorList() {
+  const el = $('#jorList'); if (!el) return;
+  const f = ($('#jorFilter') || {}).value || 'pend';
+  const all = [...S.d.jornadas].sort((a, b) => (b.date + (b.created_at || '')).localeCompare(a.date + (a.created_at || '')));
+  const rows = all.map(j => [j, jorInfo(j)]).filter(([j, i]) => f === 'all' || (f === 'sent' ? i.state === 'sent' : i.state !== 'sent' || i.active));
+  const nSent = all.filter(j => jorInfo(j).state === 'sent' && !(S.jor && S.jor.id === j.id)).length;
+  $('#jorCount').textContent = `(${all.length})`;
+  $('#btnDelSent').hidden = !nSent; $('#btnDelSent').textContent = `🗑 Borrar enviadas (${nSent})`;
+  el.innerHTML = rows.length ? rows.map(([j, i]) => `<div class="jcard ${i.active ? 'cur' : ''}" data-id="${j.id}">
+    <div class="t">${esc(j.project)} · ${esc(j.campaign)} · ${dmy(j.date)}</div>
+    <div class="s">${esc(j.component)} · ${esc(j.person || j.specialist)} (${esc(j.specialist)}) · ${i.sts.length} estaciones · ${i.ph.length} fotos · ${i.au.length} audios${i.pts.length ? ' · ' + i.pts.length + ' puntos' : ''}${i.trs.length ? ' · ' + i.trs.length + ' tracks' : ''}</div>
+    ${jorStateHtml(j, i)}
+    <div class="acts">
+      <button class="ghost sm" data-act="edit">✏️ Editar</button>
+      ${i.empty ? '' : j.hold ? '<button class="primary sm" data-act="release">▶ Liberar y enviar</button>' : i.state === 'sent' ? '' : '<button class="primary sm" data-act="send">☁️ Enviar</button>'}
+      ${i.empty || j.hold || i.state === 'sent' ? '' : '<button class="ghost sm" data-act="hold">⏸ Retener</button>'}
+      <button class="danger sm" data-act="del">🗑 Borrar</button>
+    </div></div>`).join('')
+    : `<p class="hint">${f === 'sent' ? 'Aún no hay jornadas completas en Drive.' : f === 'pend' ? 'Todo está enviado ✓. Elija "Ya enviadas" o "Todas" para verlas.' : 'Sin jornadas todavía.'}</p>`;
+}
+async function jorAction(id, act) {
+  const j = S.d.jornadas.find(x => x.id === id); if (!j) return;
+  if (act === 'edit') {
+    await activateJornada(j); renderCampo._editJor = false; showView('campo');
+    toast(j.hold ? 'Edite y luego libere el envío en Entregar' : 'Los cambios se vuelven a enviar solos (reemplazan lo anterior en Drive)', 5000);
+  }
+  if (act === 'hold') { j.hold = true; await DB.put('jornadas', j); toast('Jornada retenida: no se enviará hasta que la libere'); renderJorList(); renderDriveState(); }
+  if (act === 'release' || act === 'send') { if (j.hold) { j.hold = false; await DB.put('jornadas', j); } syncDrive(true, j.id); }
+  if (act === 'del') deleteJornadas([j]);
+}
+/* Borra del teléfono (no de Drive). Lo ya enviado: una confirmación. Lo no enviado: doble confirmación y opción de copia ZIP. */
+async function deleteJornadas(list, bulk) {
+  if (S.trk && list.some(j => j.id === S.trk.jornada_id)) { toast('Hay un track grabándose en esa jornada: termínelo primero'); return; }
+  const infos = list.map(j => [j, jorInfo(j)]);
+  const unsent = infos.filter(([, i]) => i.state !== 'sent' && !i.empty);
+  const nph = infos.reduce((t, [, i]) => t + i.ph.length, 0), nau = infos.reduce((t, [, i]) => t + i.au.length, 0);
+  const title = list.length === 1 ? `${esc(list[0].project)}/${esc(list[0].campaign)} · ${dmy(list[0].date)}` : `${list.length} jornadas enviadas`;
+  if (!unsent.length) {
+    if (!(await ask(`<h3>🗑 Borrar del teléfono</h3><p><b>${title}</b> · ${nph} fotos · ${nau} audios.</p><p>Todo está en Google Drive y ahí se queda. Solo se libera espacio en este teléfono.</p>`, [['Cancelar', false], ['Borrar del teléfono', true, 'danger']]))) return;
+  } else {
+    const [j, i] = unsent[0];
+    const v = await ask(`<h3>⚠️ Esta jornada NO está completa en Drive</h3><p><b>${title}</b></p><p>${i.pend.length ? `<b>${i.pend.length} fotos/audios nunca se enviaron.</b> ` : ''}${i.dirty || i.gal ? 'La matriz, el KMZ o la galería no están actualizados en Drive. ' : ''}Si la borra, <b>se pierde lo que no se envió</b>.</p>`, [['Cancelar', false], ['💾 Copia ZIP primero', 'zip'], ['Borrar igual', 'del', 'danger']]);
+    if (!v) return;
+    if (v === 'zip') { const cur = S.jor; S.jor = j; await makePackage('jor'); S.jor = cur; return; }
+    if (!(await ask(`<p>¿Seguro? Se borrarán <b>${i.ph.length} fotos y ${i.au.length} audios</b> de este teléfono y no se pueden recuperar.</p>`, [['No', false], ['Sí, borrar', true, 'danger']]))) return;
+  }
+  busy(true, 'Borrando del teléfono…');
+  try {
+    for (const j of list) {
+      const del = async (store, arr, blobs) => { for (const x of arr) { await DB.del(store, x.id); if (blobs) await DB.del('blobs', x.id); } };
+      const own = k => S.d[k].filter(x => x.jornada_id === j.id);
+      await del('photos', own('photos'), true); await del('audios', own('audios'), true);
+      await del('stations', own('stations')); await del('points', own('points')); await del('tracks', own('tracks'));
+      await DB.del('jornadas', j.id);
+      if (S.jor && S.jor.id === j.id) { S.jor = null; S.st = null; S.stPersisted = false; await DB.setKv('activeJor', null); await DB.setKv('activeSt', null); renderJornadaStep._filled = false; }
+    }
+  } catch (e) { toast('Error al borrar: ' + e.message, 6000); }
+  finally { busy(false); }
+  await loadAll(); await reload();
+  toast(list.length === 1 ? 'Jornada borrada del teléfono ✓' : `${list.length} jornadas borradas del teléfono ✓`);
+}
+/* Si la jornada abierta es de otro día, se ofrece iniciar la de hoy (en Drive las carpetas van por fecha) */
+async function checkJorDate() {
+  const j = S.jor; if (!j || j.date >= today() || !stationsOf(j.id).some(s => !s.voided)) return;
+  const key = j.id + '|' + today(); if ((await DB.kv('jorDateAsk')) === key) return;
+  await DB.setKv('jorDateAsk', key);
+  const ch = await ask(`<h3>📅 ¿Jornada de hoy?</h3><p>La jornada abierta es del <b>${dmy(j.date)}</b> y hoy es <b>${dmy(today())}</b>.</p><p>Si hoy es otro día de campo, inicie la jornada de hoy: en Drive cada día va en su carpeta y la fecha de las fotos coincide.</p>`, [[`Seguir en la del ${dmy(j.date)}`, false], ['Iniciar jornada de hoy', true]]);
+  if (!ch) return;
+  if (S.stPersisted || hasStationContent()) await saveStation(true);
+  j.closed_at = new Date().toISOString(); await DB.put('jornadas', j);
+  const v = { project: j.project, campaign: j.campaign, component: j.component, specialist: j.specialist, person: j.person, date: today() };
+  const same = S.d.jornadas.find(x => jorKey(x) === jorKey(v));
+  const nj = same || { id: uid(), ...v, created_at: new Date().toISOString(), app_version: APP_VERSION };
+  if (!same) { await DB.put('jornadas', nj); S.d.jornadas.push(nj); }
+  await activateJornada(nj);
+  setTimeout(autoSync, 3000);
+}
+
 /* ---------------- Google Drive ---------------- */
 async function renderConsLinks() {
   const urls = (await DB.kv('cons_urls', {})) || {};
@@ -1175,10 +1350,12 @@ function renderPendList() {
 function drLog(t) { const l = $('#drLog'); l.textContent = `${new Date().toLocaleTimeString()} ${t}\n` + l.textContent.slice(0, 3000); }
 /* Envío automático: al abrir la app, al volver la señal, al volver a la app y cada 2 min mientras haya pendientes */
 async function autoSync() {
-  if (!S.set.drAuto || !navigator.onLine || S.syncing || S.stream || S.rec) return;
+  if (!S.set.drAuto || !navigator.onLine || S.stream || S.rec) return;
+  if (S.syncing && Date.now() - (S.syncAt || 0) < SYNC_STUCK_MS) return;
   try {
     if (!Drive.ready(await Drive.cfg())) return;
-    const pend = S.d.photos.some(needsUpload) || S.d.audios.some(needsUpload) || S.d.jornadas.some(jornadaDirty);
+    const held = new Set(S.d.jornadas.filter(j => j.hold).map(j => j.id)), free = x => !held.has(x.jornada_id) && needsUpload(x);
+    const pend = S.d.photos.some(free) || S.d.audios.some(free) || S.d.jornadas.some(j => !j.hold && (jornadaDirty(j) || (galleryAuto(j) && galleryStale(j))));
     if (pend) await syncDrive(false);
   } catch (_) {}
 }
@@ -1193,29 +1370,43 @@ function jornadaDirty(j) {
     ...S.d.points.filter(x => x.jornada_id === j.id), ...S.d.tracks.filter(x => x.jornada_id === j.id && x.status !== 'rec')];
   return (kids.length && kids.some(x => Math.max(ts(x.created_at), ts(x.edited_at), ts(x.saved_at)) > t)) || ts(j.edited_at) > t;
 }
+/* La galería Word (pesada) se arma sola solo cuando la jornada ya no está en uso o se cerró; con "Enviar" siempre */
+const galleryAuto = j => !!j.closed_at || !S.jor || S.jor.id !== j.id;
+const SYNC_STUCK_MS = 12 * 60000;
+const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(Object.assign(new Error(msg), { kind: 'net' })), ms))]);
 const mediaPending = j => S.d.photos.some(p => p.jornada_id === j.id && needsUpload(p)) || S.d.audios.some(a => a.jornada_id === j.id && needsUpload(a));
-async function syncDrive(manual) {
-  if (S.syncing) return; const c = await Drive.cfg();
+async function syncDrive(manual, only) {
+  // un envío anterior que quedó trabado (app suspendida, señal cortada a medias) no puede bloquear los siguientes
+  if (S.syncing) {
+    if (Date.now() - (S.syncAt || 0) < SYNC_STUCK_MS) { if (manual) toast(`Ya hay un envío en curso (desde ${new Date(S.syncAt).toLocaleTimeString().slice(0, 5)}). Mire el registro abajo.`, 5000); return; }
+    drLog('⚠ El envío anterior quedó trabado; se reinicia'); S.syncing = false;
+  }
+  const c = await Drive.cfg();
   if (!Drive.ready(c)) { if (manual) { showView('ajustes'); toast('Configure Google Drive en Ajustes'); } return; }
   if (!navigator.onLine) { if (manual) toast('Sin señal: se enviará solo cuando vuelva la conexión'); requestBgSync(); return; }
   if (S.stPersisted && manual) { const before = stampSig(S.st) + '|' + S.st.notes; readStationForm(); if (before !== stampSig(S.st) + '|' + S.st.notes) await saveStationDraft(); }
-  S.syncing = true; $('#syncDot').hidden = false;
+  S.syncing = true; S.syncAt = Date.now(); const myRun = S.syncRun = S.syncAt; $('#syncDot').hidden = false;
   if (manual) busy(true, 'Conectando con Google Drive…');
   const step = t => { if (manual) $('#busyText').textContent = t; };
   let res = { ok: 0, failed: 0, touched: [] }, prodOk = 0, prodFail = 0;
   try {
     // 1) fotos y audios (motor compartido con el segundo plano)
-    res = await Sync.run({ manual, log: drLog, onStep: (i, n, name) => step(`Enviando ${i}/${n} · ${name}`) });
+    res = await Sync.run({ manual, only, log: drLog, onStep: (i, n, name) => { S.syncAt = Date.now(); step(`Enviando ${i}/${n} · ${name}`); } });
     if (res.busy) { if (manual) toast('Ya se está enviando en segundo plano; espere unos segundos'); return; }
     await loadAll();
     // 2) productos y consolidado: por jornada, cuando ya no le faltan archivos (o si lo pide el usuario)
     if (!res.aborted || res.kind === 'net' && res.ok) {
       const ver = res.ver || 2;
-      for (const j of S.d.jornadas.filter(j => (res.touched.includes(j.id) || jornadaDirty(j)) && (manual || !mediaPending(j)))) {
+      const cand = S.d.jornadas.filter(j => (only ? j.id === only : !j.hold) && (manual || !mediaPending(j))
+        && (res.touched.includes(j.id) || jornadaDirty(j) || ((manual || galleryAuto(j)) && galleryStale(j))));
+      for (const j of cand) {
         if (!navigator.onLine) break;
+        // automático: la jornada en uso actualiza sus productos como máximo cada 15 min (no en cada foto)
+        if (!manual && !galleryAuto(j) && j.products_at && Date.now() - ts(j.products_at) < 15 * 60000) continue;
         try {
-          const prods = await productsOf(j, t => step(`${j.date} · ${t}`));
-          for (const [n, blob] of prods) { step(`Subiendo ${n}…`); await Drive.upload([...jorPath(j), 'PRODUCTOS'], n, blob, { ver, onPart: (k, t) => step(`Subiendo ${n} · parte ${k}/${t}`) }); }
+          const gal = (manual || galleryAuto(j)) && galleryStale(j), sig = gal ? gallerySig(j) : null;
+          const prods = await withTimeout(productsOf(j, t => { S.syncAt = Date.now(); step(`${j.date} · ${t}`); }, { gallery: gal }), 8 * 60000, 'Generar los productos tardó demasiado; se reintentará');
+          for (const [n, blob] of prods) { step(`Subiendo ${n}…`); await Drive.upload([...jorPath(j), 'PRODUCTOS'], n, blob, { ver, onPart: (k, t) => { S.syncAt = Date.now(); step(`Subiendo ${n} · parte ${k}/${t}`); } }); S.syncAt = Date.now(); }
           if (ver >= 3) {
             step(`Consolidando ${j.project}/${j.campaign} en Google Sheets…`);
             try {
@@ -1225,22 +1416,23 @@ async function syncDrive(manual) {
             } catch (e) { drLog(`⚠ Consolidado ${j.project}/${j.campaign}: ${e.message}`); }
           }
           const fresh = (await DB.get('jornadas', j.id)) || j;
-          fresh.products_at = new Date().toISOString(); await DB.put('jornadas', fresh);
+          fresh.products_at = new Date().toISOString(); if (gal) { fresh.gallery_sig = sig; fresh.gallery_at = fresh.products_at; } await DB.put('jornadas', fresh);
           prodOk++; drLog(`✓ Productos de ${j.date} actualizados`);
         } catch (e) { prodFail++; drLog(`✗ Productos ${j.date}: ${e.message}`); if (e.kind === 'auth') break; }
       }
     }
-    const left = S.d.photos.filter(needsUpload).length + S.d.audios.filter(needsUpload).length;
+    const heldIds = new Set(S.d.jornadas.filter(j => j.hold).map(j => j.id)), notHeld = x => needsUpload(x) && !heldIds.has(x.jornada_id);
+    const left = S.d.photos.filter(notHeld).length + S.d.audios.filter(notHeld).length, nHeld = heldIds.size;
     await DB.setKv('sync_last', { at: new Date().toISOString(), ok: res.ok, failed: res.failed + prodFail, left, aborted: res.aborted || null });
     drLog(`Envío: ${res.ok} archivos${prodOk ? ' + productos de ' + prodOk + ' jornada(s)' : ''}${res.failed ? ', ' + res.failed + ' con error' : ''}${left ? ' · quedan ' + left : ''}`);
     if (left) requestBgSync();
     if (manual) {
       if (res.kind === 'auth') toast('Drive: ' + res.aborted + ' · revise Ajustes → Google Drive o use Diagnóstico', 9000);
       else if (left) toast(`Enviados ${res.ok}. Quedan ${left}: se reintentan solos${res.aborted ? ' (' + res.aborted + ')' : ''}`, 7000);
-      else toast(res.ok || prodOk ? `Drive al día ✓ · ${res.ok} archivos enviados` : 'Todo está al día en Drive ✓', 5000);
+      else toast((res.ok || prodOk ? `Drive al día ✓ · ${res.ok} archivos enviados` : 'Todo está al día en Drive ✓') + (nHeld && !only ? ` · ${nHeld} jornada(s) retenida(s) no se enviaron` : ''), 5000);
     }
   } catch (e) { drLog('✗ ' + e.message); if (manual) toast('Drive: ' + e.message, 7000); }
-  finally { S.syncing = false; $('#syncDot').hidden = true; busy(false); await loadAll(); await reload(); }
+  finally { if (S.syncRun === myRun) S.syncing = false; $('#syncDot').hidden = true; busy(false); await loadAll(); await reload(); }
   if (manual && S.set.drCopy && res.touched && res.touched.length) {
     const cur = S.jor;
     for (const j of S.d.jornadas.filter(j => res.touched.includes(j.id))) { S.jor = j; await makePackage('jor'); }
@@ -1300,6 +1492,9 @@ function bindSend() {
   $('#btnDocx').onclick = () => singleProduct('docx');
   $('#btnDrive').onclick = () => syncDrive(true);
   $('#btnDiag').onclick = runDiagnostics;
+  $('#jorFilter').onchange = renderJorList;
+  $('#jorList').addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b) jorAction(b.closest('.jcard').dataset.id, b.dataset.act); });
+  $('#btnDelSent').onclick = () => { const l = S.d.jornadas.filter(j => jorInfo(j).state === 'sent' && !(S.jor && S.jor.id === j.id)); if (l.length) deleteJornadas(l, true); };
   $('#btnRetry').onclick = async () => {
     for (const st of ['photos', 'audios']) for (const x of await DB.all(st)) if (x.next_try_at) { x.next_try_at = null; await DB.put(st, x); }
     await loadAll(); syncDrive(true);

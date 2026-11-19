@@ -3,11 +3,12 @@ const Geo = (() => {
   const R = Math.PI / 180;
 
   /* WGS84 → UTM (zona automática; hemisferio sur con falso norte 10 000 000). Precisión sub-métrica. */
-  function toUTM(lat, lon) {
+  function toUTM(lat, lon, forceZone) {
     const a = 6378137, f = 1 / 298.257223563, k0 = 0.9996;
     const e2 = f * (2 - f), ep2 = e2 / (1 - e2);
     let zone = Math.floor((lon + 180) / 6) + 1;
     if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) zone = 32;
+    if (forceZone) zone = forceZone;
     const lon0 = ((zone - 1) * 6 - 180 + 3) * R;
     const φ = lat * R, λ = lon * R;
     const N = a / Math.sqrt(1 - e2 * Math.sin(φ) ** 2);
@@ -113,5 +114,28 @@ const Geo = (() => {
     return best;
   }
 
-  return { toUTM, dist, cameraHeading, readKmlFile, nearestPoint };
+
+  /* Área y perímetro en coordenadas UTM WGS84 (planas), igual que QGIS/ArcGIS con el proyecto en UTM: así cuadra con los informes.
+     Todo el polígono se calcula en la zona de su primer vértice. */
+  function utmRing(ring, zone) {
+    return ring.map(([la, lo]) => { const u = toUTM(la, lo, zone); return [u.e, u.n]; });
+  }
+  function zoneOf(pt) { const z = toUTM(pt[0], pt[1]).zone; return [parseInt(z, 10), z]; }
+  function planarArea(xy) { let a = 0; for (let i = 0, n = xy.length; i < n; i++) { const p = xy[i], q = xy[(i + 1) % n]; a += p[0] * q[1] - q[0] * p[1]; } return Math.abs(a / 2); }
+  function planarLen(xy, closed) {
+    let s = 0; for (let i = 1; i < xy.length; i++) s += Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]);
+    if (closed && xy.length > 2) { const a = xy[0], b = xy[xy.length - 1]; s += Math.hypot(a[0] - b[0], a[1] - b[1]); }
+    return s;
+  }
+  function ringArea(ring) { if (ring.length < 3) return 0; const [z] = zoneOf(ring[0]); return planarArea(utmRing(ring, z)); }
+  function lineLength(pts, closed) { if (pts.length < 2) return 0; const [z] = zoneOf(pts[0]); return planarLen(utmRing(pts, z), closed); }
+  /* polígono con huecos: área neta y perímetro exterior, en la zona UTM del polígono */
+  function polygonInfo(outer, holes = []) {
+    const [z, label] = zoneOf(outer[0]);
+    const area = Math.max(0, planarArea(utmRing(outer, z)) - holes.reduce((t, h) => t + planarArea(utmRing(h, z)), 0));
+    return { area, perimeter: planarLen(utmRing(outer, z), true), holes: holes.length, zone: label };
+  }
+  const fmtArea = m2 => m2 >= 10000 ? `${(m2 / 10000).toLocaleString('es-PE', { maximumFractionDigits: m2 >= 1e6 ? 1 : 2 })} ha (${Math.round(m2).toLocaleString('es-PE')} m²)` : `${Math.round(m2).toLocaleString('es-PE')} m² (${(m2 / 10000).toLocaleString('es-PE', { maximumFractionDigits: 4 })} ha)`;
+  const fmtLen = m => m >= 1000 ? `${(m / 1000).toLocaleString('es-PE', { maximumFractionDigits: 2 })} km` : `${Math.round(m).toLocaleString('es-PE')} m`;
+  return { toUTM, dist, cameraHeading, readKmlFile, nearestPoint, ringArea, lineLength, polygonInfo, fmtArea, fmtLen, zoneOf };
 })();

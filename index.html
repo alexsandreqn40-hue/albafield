@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1f3b2d">
-<meta name="app-version" content="2.2.0">
+<meta name="app-version" content="2.3.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Alba Field">
@@ -48,10 +48,7 @@
       <p class="hint">Solo letras, números, guion o guion bajo en los códigos. Se convierten a MAYÚSCULAS.</p>
       <button class="big primary" type="submit">Siguiente: estaciones →</button>
     </form>
-    <div class="card">
-      <h3>Jornadas recientes</h3>
-      <div id="jorList" class="list"></div>
-    </div>
+    <p class="hint center"><a href="#" id="lnkMyJor">📂 Mis jornadas anteriores (editar, enviar o borrar) están en <b>Entregar</b> →</a></p>
   </div>
 
   <!-- Paso 2: estación -->
@@ -139,6 +136,8 @@
     </div>
     <div id="trkPanel" class="trkpanel" hidden><span id="trkInfo"></span><button id="btnTrkPause" class="sm ghost">Pausa</button><button id="btnTrkStop" class="sm primary">Terminar</button></div>
     <div id="posPanel" class="pospanel">Buscando señal GPS…</div>
+    <div id="pickCross" class="pickcross" hidden><span></span></div>
+    <div id="pickBar" class="pickbar" hidden><div id="pickInfo"></div><div class="row2"><button id="btnPickCancel" class="ghost sm">Cancelar</button><button id="btnPickOk" class="primary sm">📍 Poner aquí</button></div></div>
   </div>
   <div class="mapbar">
     <label class="filebtn sm">+ Capa KMZ/KML<input type="file" id="kmlIn" accept=".kml,.kmz,application/vnd.google-earth.kml+xml,application/vnd.google-earth.kmz" hidden></label>
@@ -154,10 +153,16 @@
 <section id="view-enviar" class="view">
   <h2>Entregar datos</h2>
   <div class="card">
+    <h3>Mis jornadas <span id="jorCount" class="muted"></span></h3>
+    <p class="hint">Cada jornada muestra si ya está completa en Drive. <b>Editar</b> la abre en Campo; <b>Retener</b> evita que se envíe hasta que la revise; <b>Borrar</b> la quita del teléfono (en Drive queda).</p>
+    <div class="row2 jorfilter"><select id="jorFilter"><option value="pend">Por enviar o abiertas</option><option value="sent">Ya enviadas</option><option value="all">Todas</option></select><button class="ghost sm" id="btnDelSent">🗑 Borrar todas las enviadas</button></div>
+    <div id="jorList" class="jorlist"></div>
+  </div>
+  <div class="card">
     <h3>Google Drive</h3>
     <p id="drState" class="hint">No configurado. Ver Ajustes → Google Drive.</p>
     <p id="verWarn" class="warnbox" hidden></p>
-    <p class="hint">Estructura: <code>PROYECTO / CAMPAÑA / COMPONENTE / EVALUADOR / FECHA / FOTOS · AUDIOS · PRODUCTOS</code>. Se envían solo las fotos seleccionadas. La matriz Excel, el KMZ y la galería Word se regeneran en cada envío.</p>
+    <p class="hint">Estructura: <code>PROYECTO / CAMPAÑA / COMPONENTE / EVALUADOR / FECHA / FOTOS · AUDIOS · PRODUCTOS</code>. Se envían solo las fotos seleccionadas. Matriz Excel y KMZ se actualizan mientras trabaja; la galería Word al cerrar la jornada o con este botón (solo si cambió algo).</p>
     <div class="actions">
       <button class="big primary" id="btnDrive">☁️ Enviar ahora a Drive</button>
       <div class="row2">

@@ -1,7 +1,7 @@
 /* Alba Field · service worker: la app abre y funciona sin señal, y envía fotos y audios en segundo plano
    cuando vuelve la señal (Background Sync en Android/Chrome), aunque la app esté cerrada. */
 importScripts('js/db.js', 'js/drive.js', 'js/sync.js');
-const VERSION = 'albafield-2.2.0';
+const VERSION = 'albafield-2.3.0';
 const SHELL = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/db.js', 'js/geo.js', 'js/photo.js', 'js/exports.js', 'js/drive.js', 'js/sync.js', 'js/app.js', 'drive/Code.gs',
